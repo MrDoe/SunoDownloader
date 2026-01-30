@@ -2,15 +2,23 @@
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 
 let stopFetchRequested = false;
+let isFetching = false;
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "fetch_songs") {
         stopFetchRequested = false;
-        fetchSongsList(message.isPublicOnly, message.maxPages, message.checkNewOnly);
+        isFetching = true;
+        fetchSongsList(message.isPublicOnly, message.maxPages, message.checkNewOnly, message.knownIds);
+    }
+    
+    if (message.action === "get_fetch_state") {
+        sendResponse({ isFetching: isFetching });
+        return true;
     }
     
     if (message.action === "stop_fetch") {
         stopFetchRequested = true;
+        isFetching = false;
         // Notify content script to stop
         api.tabs.query({ active: true, currentWindow: true }).then(tabs => {
             if (tabs[0]) {
@@ -40,6 +48,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     
     if (message.action === "songs_list") {
+        isFetching = false;
         // Forward songs list from content script to popup
         api.runtime.sendMessage({ 
             action: "songs_fetched", 
@@ -49,11 +58,12 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     
     if (message.action === "fetch_error_internal") {
+        isFetching = false;
         api.runtime.sendMessage({ action: "fetch_error", error: message.error });
     }
 });
 
-async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false) {
+async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false, knownIds = []) {
     try {
         const tabs = await api.tabs.query({ active: true, currentWindow: true });
         if (tabs.length === 0 || !tabs[0].url.includes("suno.com")) {
@@ -92,15 +102,16 @@ async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false) {
 
         await api.scripting.executeScript({
             target: { tabId: tabId },
-            func: (t, p, m, c) => { 
+            func: (t, p, m, c, k) => { 
                 window.sunoAuthToken = t; 
                 window.sunoPublicOnly = p;
                 window.sunoMaxPages = m;
                 window.sunoCheckNewOnly = c;
+                window.sunoKnownIds = k;
                 window.sunoStopFetch = false;
                 window.sunoMode = "fetch";
             },
-            args: [token, isPublicOnly, maxPages, checkNewOnly]
+            args: [token, isPublicOnly, maxPages, checkNewOnly, knownIds]
         });
 
         await api.scripting.executeScript({

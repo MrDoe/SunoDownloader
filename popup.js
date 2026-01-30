@@ -23,6 +23,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load from storage on startup
     loadFromStorage();
+    
+    // Check if fetching is in progress
+    checkFetchState();
+    
+    async function checkFetchState() {
+        try {
+            const response = await api.runtime.sendMessage({ action: "get_fetch_state" });
+            if (response && response.isFetching) {
+                fetchBtn.disabled = true;
+                fetchBtn.textContent = "Fetching...";
+                stopBtn.classList.remove("hidden");
+                statusDiv.innerText = "Fetching in progress...";
+            }
+        } catch (e) {
+            // Ignore errors (e.g., no response)
+        }
+    }
 
     async function loadFromStorage() {
         try {
@@ -54,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     selectAllCheckbox.checked = true;
                     renderSongList();
                     statusDiv.innerText = `${allSongs.length} cached songs. Checking for new...`;
-                    
+
                     // Check for new songs
                     setTimeout(() => checkForNewSongs(), 100);
                     return;
@@ -72,12 +89,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function checkForNewSongs() {
         const isPublicOnly = publicCheckbox.checked;
         const maxPages = parseInt(maxPagesInput.value) || 0;
+        const knownIds = allSongs.map(s => s.id);
         
         api.runtime.sendMessage({ 
             action: "fetch_songs", 
             isPublicOnly: isPublicOnly,
             maxPages: maxPages,
-            checkNewOnly: true
+            checkNewOnly: true,
+            knownIds: knownIds
         });
     }
 
@@ -276,22 +295,38 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredSongs.forEach(song => {
             const item = document.createElement("div");
             item.className = "song-item";
-            item.innerHTML = `
-                <input type="checkbox" data-id="${song.id}" checked>
-                <div class="song-info">
-                    <div class="song-title" title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</div>
-                    <div class="song-meta">
-                        <span class="${song.is_public ? 'public' : 'private'}">
-                            ${song.is_public ? '🌐 Public' : '🔒 Private'}
-                        </span>
-                        ${song.created_at ? ' • ' + formatDate(song.created_at) : ''}
-                    </div>
-                </div>
-            `;
             
-            const checkbox = item.querySelector('input[type="checkbox"]');
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.dataset.id = song.id;
+            checkbox.checked = true;
             checkbox.addEventListener("change", updateSelectedCount);
             
+            const songInfo = document.createElement("div");
+            songInfo.className = "song-info";
+            
+            const titleDiv = document.createElement("div");
+            titleDiv.className = "song-title";
+            titleDiv.title = song.title;
+            titleDiv.textContent = song.title;
+            
+            const metaDiv = document.createElement("div");
+            metaDiv.className = "song-meta";
+            
+            const visibilitySpan = document.createElement("span");
+            visibilitySpan.className = song.is_public ? 'public' : 'private';
+            visibilitySpan.textContent = song.is_public ? '🌐 Public' : '🔒 Private';
+            metaDiv.appendChild(visibilitySpan);
+            
+            if (song.created_at) {
+                metaDiv.appendChild(document.createTextNode(' • ' + formatDate(song.created_at)));
+            }
+            
+            songInfo.appendChild(titleDiv);
+            songInfo.appendChild(metaDiv);
+            
+            item.appendChild(checkbox);
+            item.appendChild(songInfo);
             songList.appendChild(item);
         });
         
