@@ -3,7 +3,6 @@
   "name": "Suno Bulk Downloader",
   "version": "2.0",
   "description": "Download all published Suno songs.",
-  "id": "suno-bulk-downloader",
   "permissions": [
     "downloads",
     "scripting",
@@ -28,8 +27,5 @@
       ]
     }
   }
-  },
-  "data_collection_permissions": [
-    "none"
-  ]
+  }
 }
