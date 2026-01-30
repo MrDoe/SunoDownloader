@@ -1,10 +1,34 @@
 // background.js
 const api = (typeof browser !== 'undefined') ? browser : chrome;
 
+let stopFetchRequested = false;
+
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === "start_download") {
-        // Pass the new parameter to the start function
-        startProcess(message.folderName, message.isPublicOnly);
+    if (message.action === "fetch_songs") {
+        stopFetchRequested = false;
+        fetchSongsList(message.isPublicOnly, message.maxPages, message.checkNewOnly);
+    }
+    
+    if (message.action === "stop_fetch") {
+        stopFetchRequested = true;
+        // Notify content script to stop
+        api.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+            if (tabs[0]) {
+                api.scripting.executeScript({
+                    target: { tabId: tabs[0].id },
+                    func: () => { window.sunoStopFetch = true; }
+                });
+            }
+        });
+    }
+    
+    if (message.action === "check_stop") {
+        sendResponse({ stop: stopFetchRequested });
+        return true;
+    }
+
+    if (message.action === "download_selected") {
+        downloadSelectedSongs(message.folderName, message.songs);
     }
 
     if (message.action === "download_item") {
@@ -14,20 +38,34 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
             conflictAction: "uniquify"
         });
     }
+    
+    if (message.action === "songs_list") {
+        // Forward songs list from content script to popup
+        api.runtime.sendMessage({ 
+            action: "songs_fetched", 
+            songs: message.songs,
+            checkNewOnly: message.checkNewOnly
+        });
+    }
+    
+    if (message.action === "fetch_error_internal") {
+        api.runtime.sendMessage({ action: "fetch_error", error: message.error });
+    }
 });
 
-async function startProcess(folderName, isPublicOnly) {
+async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false) {
     try {
         const tabs = await api.tabs.query({ active: true, currentWindow: true });
         if (tabs.length === 0 || !tabs[0].url.includes("suno.com")) {
-            logToPopup("❌ Error: Please open Suno.com in the active tab.");
+            api.runtime.sendMessage({ action: "fetch_error", error: "❌ Error: Please open Suno.com in the active tab." });
             return;
         }
         const tabId = tabs[0].id;
 
-        logToPopup("🔑 Extracting Auth Token...");
+        if (!checkNewOnly) {
+            logToPopup("🔑 Extracting Auth Token...");
+        }
 
-        // 1. Get Token from Main World
         const tokenResults = await api.scripting.executeScript({
             target: { tabId: tabId },
             world: "MAIN",
@@ -44,24 +82,27 @@ async function startProcess(folderName, isPublicOnly) {
         const token = tokenResults[0]?.result;
 
         if (!token) {
-            logToPopup("❌ Error: Could not find Auth Token. Log in first!");
+            api.runtime.sendMessage({ action: "fetch_error", error: "❌ Error: Could not find Auth Token. Log in first!" });
             return;
         }
 
-        logToPopup("✅ Token found! Injecting scraper...");
+        if (!checkNewOnly) {
+            logToPopup("✅ Token found! Fetching songs list...");
+        }
 
-        // 2. Inject Variables (Token + Folder + PublicSetting)
         await api.scripting.executeScript({
             target: { tabId: tabId },
-            func: (t, f, p) => { 
+            func: (t, p, m, c) => { 
                 window.sunoAuthToken = t; 
-                window.sunoDownloadFolder = f;
-                window.sunoPublicOnly = p; // <--- Store the checkbox value
+                window.sunoPublicOnly = p;
+                window.sunoMaxPages = m;
+                window.sunoCheckNewOnly = c;
+                window.sunoStopFetch = false;
+                window.sunoMode = "fetch";
             },
-            args: [token, folderName, isPublicOnly]
+            args: [token, isPublicOnly, maxPages, checkNewOnly]
         });
 
-        // 3. Run Content Script
         await api.scripting.executeScript({
             target: { tabId: tabId },
             files: ["content.js"]
@@ -69,8 +110,48 @@ async function startProcess(folderName, isPublicOnly) {
 
     } catch (err) {
         console.error(err);
-        logToPopup("❌ System Error: " + err.message);
+        api.runtime.sendMessage({ action: "fetch_error", error: "❌ System Error: " + err.message });
     }
+}
+
+async function downloadSelectedSongs(folderName, songs) {
+    const cleanFolder = folderName.replace(/[^a-zA-Z0-9_-]/g, "");
+    
+    function sanitizeFilename(name) {
+        return name.replace(/[<>:"/\\|?*]/g, "").trim().substring(0, 100);
+    }
+    
+    logToPopup(`🚀 Starting download of ${songs.length} songs...`);
+    
+    let downloadedCount = 0;
+    
+    for (const song of songs) {
+        if (song.audio_url) {
+            const title = song.title || `Untitled_${song.id}`;
+            const filename = `${cleanFolder}/${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
+            
+            try {
+                await api.downloads.download({
+                    url: song.audio_url,
+                    filename: filename,
+                    conflictAction: "uniquify"
+                });
+                downloadedCount++;
+                
+                if (downloadedCount % 5 === 0) {
+                    logToPopup(`📥 Downloaded ${downloadedCount}/${songs.length}...`);
+                }
+            } catch (err) {
+                logToPopup(`⚠️ Failed: ${title}`);
+            }
+            
+            // Small delay to avoid overwhelming the browser
+            await new Promise(r => setTimeout(r, 200));
+        }
+    }
+    
+    logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs.`);
+    api.runtime.sendMessage({ action: "download_complete" });
 }
 
 function logToPopup(text) {

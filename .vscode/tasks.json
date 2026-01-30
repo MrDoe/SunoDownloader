@@ -1,0 +1,75 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install web-ext",
+      "type": "shell",
+      "command": "sudo",
+      "args": [
+        "npm",
+        "install",
+        "-g",
+        "web-ext"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build Extension",
+      "type": "shell",
+      "command": "web-ext",
+      "args": [
+        "build",
+        "--source-dir", "${workspaceFolder}",
+        "--artifacts-dir", "${workspaceFolder}/web-ext-artifacts",
+        "--overwrite-dest"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Sign Extension",
+      "type": "shell",
+      "command": "web-ext",
+      "args": [
+        "sign",
+        "--source-dir", "${workspaceFolder}",
+        "--artifacts-dir", "${workspaceFolder}/web-ext-artifacts",
+        "--api-key", "${env:WEB_EXT_API_KEY}",
+        "--api-secret", "${env:WEB_EXT_API_SECRET}",
+        "--channel", "listed"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build and Sign Extension",
+      "dependsOn": ["Sign Extension"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Extension (Firefox)",
+      "type": "shell",
+      "command": "web-ext",
+      "args": [
+        "run",
+        "--source-dir", "${workspaceFolder}",
+        "--start-url", "https://suno.com"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint Extension",
+      "type": "shell",
+      "command": "web-ext",
+      "args": [
+        "lint",
+        "--source-dir", "${workspaceFolder}"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

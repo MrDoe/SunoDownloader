@@ -1,30 +1,75 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <style>
-        body { width: 300px; font-family: sans-serif; padding: 10px; }
-        button { width: 100%; padding: 10px; cursor: pointer; background: #222; color: #fff; border: none; font-weight: bold; margin-top: 10px;}
+        body { width: 400px; font-family: sans-serif; padding: 10px; }
+        button { padding: 10px 15px; cursor: pointer; background: #222; color: #fff; border: none; font-weight: bold; margin-top: 10px; }
         button:hover { background: #444; }
-        input[type="text"] { width: 90%; padding: 5px; margin-bottom: 5px; }
+        button:disabled { background: #999; cursor: not-allowed; }
+        .btn-row { display: flex; gap: 10px; }
+        .btn-row button { flex: 1; }
+        input[type="text"] { width: calc(100% - 12px); padding: 5px; margin-bottom: 5px; box-sizing: border-box; }
         label { display: block; margin-top: 5px; font-size: 13px; cursor: pointer; }
-        #status { margin-top: 10px; font-size: 12px; height: 150px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; background: #f9f9f9; }
+        #status { margin-top: 10px; font-size: 12px; height: 80px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; background: #f9f9f9; }
         .note { font-size: 10px; color: #666; margin-bottom: 10px; }
+        
+        /* Song list styles */
+        #songListContainer { display: none; margin-top: 10px; }
+        #filterInput { width: calc(100% - 12px); padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        #songList { max-height: 250px; overflow-y: auto; border: 1px solid #ddd; background: #fff; }
+        .song-item { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+        .song-item:hover { background: #f5f5f5; }
+        .song-item input[type="checkbox"] { margin-right: 10px; flex-shrink: 0; }
+        .song-info { flex: 1; overflow: hidden; }
+        .song-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .song-meta { color: #666; font-size: 11px; }
+        .song-meta .public { color: #28a745; }
+        .song-meta .private { color: #dc3545; }
+        
+        #selectControls { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        #selectControls label { margin: 0; }
+        #songCount { font-size: 12px; color: #666; margin-left: auto; }
+        
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
-    <h3>Suno Downloader</h3>
+    <h3>Suno Downloader 0.5.0</h3>
     <div class="note">Make sure you are logged into Suno.com in this browser.</div>
     
-    <div>Folder Name (inside Downloads):</div>
-    <input type="text" id="folder" value="Suno_Songs">
+    <div id="settingsPanel">
+        <div>Folder Name (inside Downloads):</div>
+        <input type="text" id="folder" value="Suno_Songs" placeholder="Folder Name">
+                <div style="margin-top: 10px;">Max Pages to Load (0 = unlimited):</div>
+        <input type="number" id="maxPages" value="0" min="0" style="width: 60px;">
+                <label>
+            <input type="checkbox" id="publicOnly" checked> 
+            Show Public Songs Only
+        </label>
+        
+        <div class="btn-row">
+            <button id="fetchBtn">Fetch Songs List</button>
+            <button id="stopBtn" class="hidden" style="background: #c00;">Stop</button>
+        </div>
+        <button id="viewSongsBtn" class="hidden" style="background: #060; margin-top: 5px; width: 100%;">View Songs</button>
+    </div>
     
-    <!-- New Checkbox -->
-    <label>
-        <input type="checkbox" id="publicOnly" checked> 
-        Download Public Songs Only
-    </label>
-    
-    <button id="startBtn">Start Download</button>
+    <div id="songListContainer">
+        <input type="text" id="filterInput" placeholder="Filter by title...">
+        
+        <div id="selectControls">
+            <label><input type="checkbox" id="selectAll" checked> Select All</label>
+            <span id="songCount">0 songs</span>
+        </div>
+        
+        <div id="songList"></div>
+        
+        <div class="btn-row">
+            <button id="backBtn">← Back</button>
+            <button id="downloadBtn">Download Selected</button>
+        </div>
+    </div>
     
     <div id="status">Ready...</div>
 
