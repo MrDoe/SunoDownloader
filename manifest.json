@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Suno Bulk Downloader",
+  "version": "2.0",
+  "description": "Download all published Suno songs.",
+  "id": "suno-bulk-downloader",
+  "permissions": [
+    "downloads",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.suno.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+  "gecko": {
+    "id": "@suno-bulk-downloader",
+    "strict_min_version": "58.0"
+  }
+  },
+  "data_collection_permissions": [
+    "*"
+  ]
+}

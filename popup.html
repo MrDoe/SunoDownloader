@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { width: 300px; font-family: sans-serif; padding: 10px; }
+        button { width: 100%; padding: 10px; cursor: pointer; background: #222; color: #fff; border: none; font-weight: bold; margin-top: 10px;}
+        button:hover { background: #444; }
+        input[type="text"] { width: 90%; padding: 5px; margin-bottom: 5px; }
+        label { display: block; margin-top: 5px; font-size: 13px; cursor: pointer; }
+        #status { margin-top: 10px; font-size: 12px; height: 150px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; background: #f9f9f9; }
+        .note { font-size: 10px; color: #666; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h3>Suno Downloader</h3>
+    <div class="note">Make sure you are logged into Suno.com in this browser.</div>
+    
+    <div>Folder Name (inside Downloads):</div>
+    <input type="text" id="folder" value="Suno_Songs">
+    
+    <!-- New Checkbox -->
+    <label>
+        <input type="checkbox" id="publicOnly" checked> 
+        Download Public Songs Only
+    </label>
+    
+    <button id="startBtn">Start Download</button>
+    
+    <div id="status">Ready...</div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
+
