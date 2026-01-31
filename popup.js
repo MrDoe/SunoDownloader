@@ -7,6 +7,7 @@ let filteredSongs = [];
 document.addEventListener('DOMContentLoaded', () => {
     const statusDiv = document.getElementById("status");
     const folderInput = document.getElementById("folder");
+    const formatSelect = document.getElementById("format");
     const publicCheckbox = document.getElementById("publicOnly");
     const maxPagesInput = document.getElementById("maxPages");
     const fetchBtn = document.getElementById("fetchBtn");
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Restore settings
                 if (data.folder) folderInput.value = data.folder;
+                if (data.format) formatSelect.value = data.format;
                 if (data.publicOnly !== undefined) publicCheckbox.checked = data.publicOnly;
                 if (data.maxPages !== undefined) maxPagesInput.value = data.maxPages;
                 
@@ -106,6 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sunoSongsList: {
                     songs: allSongs,
                     folder: folderInput.value,
+                    format: formatSelect.value,
                     publicOnly: publicCheckbox.checked,
                     maxPages: parseInt(maxPagesInput.value) || 0,
                     timestamp: Date.now()
@@ -211,6 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const folder = folderInput.value;
+        const format = formatSelect.value;
         const songsToDownload = allSongs.filter(s => selectedIds.includes(s.id));
         
         downloadBtn.disabled = true;
@@ -219,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         api.runtime.sendMessage({ 
             action: "download_selected", 
             folderName: folder,
+            format: format,
             songs: songsToDownload
         });
         

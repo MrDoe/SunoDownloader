@@ -41,7 +41,14 @@
     <div id="settingsPanel">
         <div>Folder Name (inside Downloads):</div>
         <input type="text" id="folder" value="Suno_Songs" placeholder="Folder Name">
-                <div style="margin-top: 10px;">Max Pages to Load (0 = unlimited):</div>
+        
+        <div style="margin-top: 10px;">Download Format:</div>
+        <select id="format" style="padding: 5px; margin-bottom: 5px;">
+            <option value="mp3">MP3 (smaller file size)</option>
+            <option value="wav">WAV (lossless quality)</option>
+        </select>
+        
+        <div style="margin-top: 10px;">Max Pages to Load (0 = unlimited):</div>
         <input type="number" id="maxPages" value="0" min="0" style="width: 60px;">
                 <label>
             <input type="checkbox" id="publicOnly" checked> 

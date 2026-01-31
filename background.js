@@ -36,7 +36,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === "download_selected") {
-        downloadSelectedSongs(message.folderName, message.songs);
+        downloadSelectedSongs(message.folderName, message.songs, message.format || 'mp3');
     }
 
     if (message.action === "download_item") {
@@ -125,43 +125,175 @@ async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false, know
     }
 }
 
-async function downloadSelectedSongs(folderName, songs) {
+async function downloadSelectedSongs(folderName, songs, format = 'mp3') {
     const cleanFolder = folderName.replace(/[^a-zA-Z0-9_-]/g, "");
     
     function sanitizeFilename(name) {
         return name.replace(/[<>:"/\\|?*]/g, "").trim().substring(0, 100);
     }
     
-    logToPopup(`🚀 Starting download of ${songs.length} songs...`);
+    const formatLabel = format.toUpperCase();
+    logToPopup(`🚀 Starting download of ${songs.length} ${formatLabel} files...`);
     
     let downloadedCount = 0;
+    let failedCount = 0;
     
-    for (const song of songs) {
-        if (song.audio_url) {
+    // For WAV downloads, we need to use the authenticated API
+    if (format === 'wav') {
+        // Get the active tab to execute the WAV conversion requests
+        const tabs = await api.tabs.query({ active: true, currentWindow: true });
+        if (tabs.length === 0 || !tabs[0].url.includes("suno.com")) {
+            logToPopup("❌ Error: Please open Suno.com for WAV downloads.");
+            api.runtime.sendMessage({ action: "download_complete" });
+            return;
+        }
+        const tabId = tabs[0].id;
+        
+        // Get auth token
+        const tokenResults = await api.scripting.executeScript({
+            target: { tabId: tabId },
+            world: "MAIN",
+            func: async () => {
+                try {
+                    if (window.Clerk && window.Clerk.session) {
+                        return await window.Clerk.session.getToken();
+                    }
+                    return null;
+                } catch (e) { return null; }
+            }
+        });
+        
+        const token = tokenResults[0]?.result;
+        if (!token) {
+            logToPopup("❌ Error: Could not get auth token for WAV download.");
+            api.runtime.sendMessage({ action: "download_complete" });
+            return;
+        }
+        
+        for (const song of songs) {
             const title = song.title || `Untitled_${song.id}`;
-            const filename = `${cleanFolder}/${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
+            const filename = `${cleanFolder}/${sanitizeFilename(title)}_${song.id.slice(-4)}.wav`;
             
             try {
-                await api.downloads.download({
-                    url: song.audio_url,
-                    filename: filename,
-                    conflictAction: "uniquify"
+                // Request WAV conversion and poll until ready
+                const wavResult = await api.scripting.executeScript({
+                    target: { tabId: tabId },
+                    world: "MAIN",
+                    func: async (clipId, authToken) => {
+                        try {
+                            // Step 1: Start the conversion
+                            const convertResponse = await fetch(`https://studio-api.prod.suno.com/api/gen/${clipId}/convert_wav/`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${authToken}`
+                                }
+                            });
+                            
+                            if (!convertResponse.ok) {
+                                return { error: `Convert HTTP ${convertResponse.status}` };
+                            }
+                            
+                            // Step 2: Poll for the WAV file URL
+                            const maxAttempts = 30;
+                            for (let i = 0; i < maxAttempts; i++) {
+                                await new Promise(r => setTimeout(r, 1000));
+                                
+                                const pollResponse = await fetch(`https://studio-api.prod.suno.com/api/gen/${clipId}/wav_file/`, {
+                                    method: 'GET',
+                                    headers: {
+                                        'Authorization': `Bearer ${authToken}`
+                                    }
+                                });
+                                
+                                if (pollResponse.ok) {
+                                    const data = await pollResponse.json();
+                                    const wavUrl = data.wav_file_url || data.url || data.download_url;
+                                    if (wavUrl) {
+                                        return { url: wavUrl };
+                                    }
+                                    if (data.status === 'complete' || data.status === 'ready') {
+                                        return { url: wavUrl };
+                                    }
+                                } else if (pollResponse.status === 404 || pollResponse.status === 202) {
+                                    // Still processing, continue polling
+                                    continue;
+                                } else {
+                                    return { error: `Poll HTTP ${pollResponse.status}` };
+                                }
+                            }
+                            return { error: 'Timeout waiting for WAV' };
+                        } catch (e) {
+                            return { error: e.message };
+                        }
+                    },
+                    args: [song.id, token]
                 });
-                downloadedCount++;
                 
-                if (downloadedCount % 5 === 0) {
-                    logToPopup(`📥 Downloaded ${downloadedCount}/${songs.length}...`);
+                const result = wavResult[0]?.result;
+                
+                if (result?.error) {
+                    logToPopup(`⚠️ WAV failed: ${title} (${result.error})`);
+                    failedCount++;
+                    continue;
+                }
+                
+                if (result?.url) {
+                    await api.downloads.download({
+                        url: result.url,
+                        filename: filename,
+                        conflictAction: "uniquify"
+                    });
+                    downloadedCount++;
+                    
+                    if (downloadedCount % 5 === 0) {
+                        logToPopup(`📥 Downloaded ${downloadedCount}/${songs.length}...`);
+                    }
+                } else {
+                    logToPopup(`⚠️ No WAV URL: ${title}`);
+                    failedCount++;
                 }
             } catch (err) {
                 logToPopup(`⚠️ Failed: ${title}`);
+                failedCount++;
             }
             
-            // Small delay to avoid overwhelming the browser
-            await new Promise(r => setTimeout(r, 200));
+            // Longer delay for WAV to avoid rate limiting
+            await new Promise(r => setTimeout(r, 500));
+        }
+    } else {
+        // MP3 downloads - direct from CDN
+        for (const song of songs) {
+            if (song.audio_url) {
+                const title = song.title || `Untitled_${song.id}`;
+                const filename = `${cleanFolder}/${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
+                
+                try {
+                    await api.downloads.download({
+                        url: song.audio_url,
+                        filename: filename,
+                        conflictAction: "uniquify"
+                    });
+                    downloadedCount++;
+                    
+                    if (downloadedCount % 5 === 0) {
+                        logToPopup(`📥 Downloaded ${downloadedCount}/${songs.length}...`);
+                    }
+                } catch (err) {
+                    logToPopup(`⚠️ Failed: ${title}`);
+                    failedCount++;
+                }
+                
+                await new Promise(r => setTimeout(r, 200));
+            }
         }
     }
     
-    logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs.`);
+    if (failedCount > 0) {
+        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs (${failedCount} failed).`);
+    } else {
+        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs.`);
+    }
     api.runtime.sendMessage({ action: "download_complete" });
 }
 
