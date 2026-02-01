@@ -3,6 +3,7 @@
   "name": "SunoDownloader",
   "version": "0.6.2",
   "description": "Download all your published Suno songs.",
+  "license": "MIT",  
   "permissions": [
     "downloads",
     "scripting",
@@ -17,6 +18,12 @@
     "default_popup": "popup.html"
   },
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{a7b8f3c2-9d1e-4b6f-8a3c-5e2d7f9b1a4c}",
+      "strict_min_version": "142.0"
+    }
   }
 }
