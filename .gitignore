@@ -1,2 +1,5 @@
 /SunoDownloader.zip
 /Suno_Downloads
+/web-ext-artifacts
+*/web-ext-artifacts
+node_modules
