@@ -2,7 +2,9 @@
   "manifest_version": 3,
   "name": "SunoDownloader",
   "version": "0.6.2",
-  "description": "Download all your published Suno songs.",  "license": "MIT",  "permissions": [
+  "description": "Download all your published Suno songs.",
+  "license": "MIT",  
+  "permissions": [
     "downloads",
     "scripting",
     "activeTab",
