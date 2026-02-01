@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Suno Bulk Downloader",
-  "version": "0.6.0",
-  "description": "Download all published Suno songs.",
+  "name": "SunoDownloader",
+  "version": "0.6.2",
+  "description": "Download all your published Suno songs.",
   "permissions": [
     "downloads",
     "scripting",
@@ -21,7 +21,7 @@
   },
   "browser_specific_settings": {
   "gecko": {
-    "id": "@suno-bulk-downloader",
+    "id": "@suno-downloader",
     "strict_min_version": "142.0",
     "data_collection_permissions": {
       "required": [

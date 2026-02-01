@@ -21,9 +21,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const songCount = document.getElementById("songCount");
     const settingsPanel = document.getElementById("settingsPanel");
     const songListContainer = document.getElementById("songListContainer");
+    const darkModeToggle = document.getElementById("darkModeToggle");
 
+    // Load dark mode preference and apply it
+    loadDarkModePreference();
+    
     // Load from storage on startup
     loadFromStorage();
+    
+    // Save format preference when changed
+    formatSelect.addEventListener("change", () => {
+        api.storage.local.set({ sunoFormat: formatSelect.value });
+    });
+    
+    // Dark mode toggle
+    darkModeToggle.addEventListener("click", () => {
+        document.body.classList.toggle("dark-mode");
+        const isDarkMode = document.body.classList.contains("dark-mode");
+        api.storage.local.set({ sudoDarkMode: isDarkMode });
+        updateDarkModeToggleIcon();
+    });
+    
+    function updateDarkModeToggleIcon() {
+        const isDarkMode = document.body.classList.contains("dark-mode");
+        darkModeToggle.textContent = isDarkMode ? "☀️" : "🌙";
+        darkModeToggle.title = isDarkMode ? "Toggle light mode" : "Toggle dark mode";
+    }
+    
+    async function loadDarkModePreference() {
+        try {
+            const result = await api.storage.local.get('sudoDarkMode');
+            let isDarkMode = result.sudoDarkMode;
+            
+            // If no preference saved, check system preference
+            if (isDarkMode === undefined) {
+                isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            
+            if (isDarkMode) {
+                document.body.classList.add("dark-mode");
+            }
+            
+            updateDarkModeToggleIcon();
+        } catch (e) {
+            console.error('Failed to load dark mode preference:', e);
+        }
+    }
     
     // Check if fetching is in progress
     checkFetchState();
@@ -44,8 +87,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadFromStorage() {
         try {
-            const result = await api.storage.local.get('sunoSongsList');
+            const result = await api.storage.local.get(['sunoSongsList', 'sunoFormat']);
             const data = result.sunoSongsList;
+            
+            // Load saved format preference first (outside data check so it always loads)
+            if (result.sunoFormat) {
+                formatSelect.value = result.sunoFormat;
+            }
             if (data) {
                 // Check if data is older than 24 hours
                 const maxAge = 24 * 60 * 60 * 1000; // 24 hours
@@ -112,7 +160,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     publicOnly: publicCheckbox.checked,
                     maxPages: parseInt(maxPagesInput.value) || 0,
                     timestamp: Date.now()
-                }
+                },
+                sunoFormat: formatSelect.value
             });
         } catch (e) {
             console.error('Failed to save to storage:', e);
