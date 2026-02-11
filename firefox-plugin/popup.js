@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopBtn = document.getElementById("stopBtn");
     const viewSongsBtn = document.getElementById("viewSongsBtn");
     const downloadBtn = document.getElementById("downloadBtn");
+    const stopDownloadBtn = document.getElementById("stopDownloadBtn");
     const backBtn = document.getElementById("backBtn");
     const filterInput = document.getElementById("filterInput");
     const filterLiked = document.getElementById("filterLiked");
@@ -73,6 +74,23 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Check if fetching is in progress
     checkFetchState();
+
+    // Check if downloading is in progress (important when popup is reopened)
+    checkDownloadState();
+
+    function setDownloadUiState(isRunning) {
+        if (isRunning) {
+            downloadBtn.disabled = true;
+            downloadBtn.textContent = "Downloading...";
+            stopDownloadBtn.classList.remove("hidden");
+            backBtn.disabled = true;
+        } else {
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = "Download Selected";
+            stopDownloadBtn.classList.add("hidden");
+            backBtn.disabled = false;
+        }
+    }
     
     async function checkFetchState() {
         try {
@@ -85,6 +103,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (e) {
             // Ignore errors (e.g., no response)
+        }
+    }
+
+    async function checkDownloadState() {
+        try {
+            const response = await api.runtime.sendMessage({ action: "get_download_state" });
+            if (response && response.isDownloading) {
+                setDownloadUiState(true);
+                statusDiv.innerText = "Download in progress...";
+            }
+        } catch (e) {
+            // Ignore errors
         }
     }
 
@@ -315,9 +345,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const folder = folderInput.value;
         const format = formatSelect.value;
         const songsToDownload = allSongs.filter(s => selectedIds.includes(s.id));
-        
-        downloadBtn.disabled = true;
-        downloadBtn.textContent = "Downloading...";
+
+        setDownloadUiState(true);
         
         api.runtime.sendMessage({ 
             action: "download_selected", 
@@ -329,10 +358,25 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.innerText = `Downloading ${songsToDownload.length} songs...`;
     });
 
+    // Stop downloading
+    stopDownloadBtn.addEventListener("click", () => {
+        api.runtime.sendMessage({ action: "stop_download" });
+        statusDiv.innerText = "Stopping download...\n" + statusDiv.innerText;
+        // Keep UI in running state until background confirms stop/complete
+    });
+
     // Listen for messages from background
     api.runtime.onMessage.addListener((message) => {
         if (message.action === "log") {
             statusDiv.innerText = message.text + "\n" + statusDiv.innerText;
+        }
+
+        if (message.action === "download_state") {
+            setDownloadUiState(!!message.isDownloading);
+        }
+
+        if (message.action === "download_stopped") {
+            setDownloadUiState(false);
         }
         
         if (message.action === "songs_fetched") {
@@ -382,8 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (message.action === "download_complete") {
-            downloadBtn.disabled = false;
-            downloadBtn.textContent = "Download Selected";
+            setDownloadUiState(false);
         }
     });
 
