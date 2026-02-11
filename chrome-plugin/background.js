@@ -11,6 +11,24 @@ let activeDownloadIds = new Set();
 
 const DOWNLOAD_STATE_KEY = 'sunoDownloadState';
 
+async function getSunoTab() {
+    // Popups/options can be the active tab in some browsers. Try active tab first, then fallback.
+    try {
+        const activeTabs = await api.tabs.query({ active: true, currentWindow: true });
+        const active = activeTabs?.[0];
+        if (active?.url && active.url.includes('suno.com')) return active;
+
+        const windowTabs = await api.tabs.query({ currentWindow: true });
+        const sunoInWindow = windowTabs.find(t => t.url && t.url.includes('suno.com'));
+        if (sunoInWindow) return sunoInWindow;
+
+        const allTabs = await api.tabs.query({});
+        return allTabs.find(t => t.url && t.url.includes('suno.com')) || null;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function persistDownloadState(extra = {}) {
     try {
         await api.storage.local.set({
@@ -65,6 +83,70 @@ try {
 }
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "fetch_feed_page") {
+        (async () => {
+            try {
+                const token = message.token;
+                const cursorValue = message.cursor || null;
+                const isPublicOnly = !!message.isPublicOnly;
+
+                if (!token) {
+                    sendResponse({ ok: false, status: 0, error: "Missing token" });
+                    return;
+                }
+
+                const body = {
+                    limit: 20,
+                    filters: {
+                        disliked: "False",
+                        trashed: "False",
+                        fromStudioProject: { presence: "False" }
+                    }
+                };
+
+                if (isPublicOnly) {
+                    body.filters.public = "True";
+                }
+                if (cursorValue) {
+                    body.cursor = cursorValue;
+                }
+
+                const controller = new AbortController();
+                const timeoutMs = 20000;
+                const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+                const response = await fetch('https://studio-api.prod.suno.com/api/feed/v3', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(body),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeout);
+
+                const status = response.status;
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    // ignore
+                }
+
+                sendResponse({
+                    ok: response.ok,
+                    status,
+                    data
+                });
+            } catch (e) {
+                sendResponse({ ok: false, status: 0, error: e?.message || String(e) });
+            }
+        })();
+        return true;
+    }
+
     if (message.action === "fetch_songs") {
         stopFetchRequested = false;
         isFetching = true;
@@ -80,10 +162,10 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
         stopFetchRequested = true;
         isFetching = false;
         // Notify content script to stop
-        api.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-            if (tabs[0]) {
+        getSunoTab().then(tab => {
+            if (tab?.id) {
                 api.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
+                    target: { tabId: tab.id },
                     func: () => { window.sunoStopFetch = true; }
                 });
             }
@@ -125,10 +207,10 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
 
         // Notify the Suno page to stop any in-page WAV polling
-        api.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-            if (tabs[0]) {
+        getSunoTab().then(tab => {
+            if (tab?.id) {
                 api.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
+                    target: { tabId: tab.id },
                     func: () => { window.sunoStopDownload = true; }
                 });
             }
@@ -183,12 +265,12 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false, knownIds = []) {
     try {
-        const tabs = await api.tabs.query({ active: true, currentWindow: true });
-        if (tabs.length === 0 || !tabs[0].url.includes("suno.com")) {
+        const tab = await getSunoTab();
+        if (!tab?.id || !tab.url || !tab.url.includes("suno.com")) {
             api.runtime.sendMessage({ action: "fetch_error", error: "❌ Error: Please open Suno.com in the active tab." });
             return;
         }
-        const tabId = tabs[0].id;
+        const tabId = tab.id;
 
         if (!checkNewOnly) {
             logToPopup("🔑 Extracting Auth Token...");
@@ -255,10 +337,10 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
 
     // Ensure in-page stop flag exists (used for WAV polling)
     try {
-        const tabs = await api.tabs.query({ active: true, currentWindow: true });
-        if (tabs.length > 0 && tabs[0].url && tabs[0].url.includes("suno.com")) {
+        const tab = await getSunoTab();
+        if (tab?.id && tab.url && tab.url.includes("suno.com")) {
             await api.scripting.executeScript({
-                target: { tabId: tabs[0].id },
+                target: { tabId: tab.id },
                 func: () => { window.sunoStopDownload = false; }
             });
         }
@@ -272,13 +354,13 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     // For WAV downloads, we need to use the authenticated API
     if (format === 'wav') {
         // Get the active tab to execute the WAV conversion requests
-        const tabs = await api.tabs.query({ active: true, currentWindow: true });
-        if (tabs.length === 0 || !tabs[0].url.includes("suno.com")) {
+        const tab = await getSunoTab();
+        if (!tab?.id || !tab.url || !tab.url.includes("suno.com")) {
             logToPopup("❌ Error: Please open Suno.com for WAV downloads.");
             api.runtime.sendMessage({ action: "download_complete" });
             return;
         }
-        const tabId = tabs[0].id;
+        const tabId = tab.id;
         
         // Get auth token
         const tokenResults = await api.scripting.executeScript({

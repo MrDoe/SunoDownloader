@@ -35,33 +35,32 @@
     const maxDelay = 5000;
 
     async function fetchPage(cursorValue) {
-        const body = {
-            limit: 20,
-            filters: {
-                disliked: "False",
-                trashed: "False",
-                fromStudioProject: { presence: "False" }
-                // Removed stem filter to include stems
+        // IMPORTANT (Firefox Android compatibility): do the network request in the background
+        // to avoid content-script fetch/CORS edge cases.
+        const res = await Promise.race([
+            api.runtime.sendMessage({
+                action: "fetch_feed_page",
+                token,
+                cursor: cursorValue || null,
+                isPublicOnly
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout contacting background')), 25000))
+        ]).catch((e) => ({ ok: false, status: 0, error: e?.message || String(e) }));
+
+        // If the background didn't respond properly, throw to trigger retry logic.
+        if (!res?.ok && (!res?.status || res.status === 0)) {
+            throw new Error(res?.error || 'Background fetch failed');
+        }
+
+        // Emulate the minimal Response shape the rest of the code expects.
+        return {
+            ok: !!res?.ok,
+            status: typeof res?.status === 'number' ? res.status : 0,
+            json: async () => {
+                if (res?.data) return res.data;
+                return {};
             }
         };
-        
-        if (isPublicOnly) {
-            body.filters.public = "True";
-        }
-        
-        if (cursorValue) {
-            body.cursor = cursorValue;
-        }
-        
-        const response = await fetch(`https://studio-api.prod.suno.com/api/feed/v3`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(body)
-        });
-        return response;
     }
 
     async function fetchWithRetry(cursorValue) {

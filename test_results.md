@@ -22,7 +22,7 @@ warnings        1
 
 ### Build Test
 - ✅ Successfully built extension package
-- ✅ Output: sunodownloader-0.8.2.zip
+- ✅ Output: sunodownloader-0.8.3.zip
 
 ### JavaScript Validation
 - ✅ background.js - No syntax errors
