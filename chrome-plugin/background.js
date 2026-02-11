@@ -335,6 +335,19 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     const formatLabel = format.toUpperCase();
     logToPopup(`🚀 Starting download of ${songs.length} ${formatLabel} files...`);
 
+    // Some platforms (notably Firefox Android) may not support subfolders in downloads filenames.
+    let isAndroid = false;
+    try {
+        const platformInfo = await api.runtime.getPlatformInfo();
+        isAndroid = platformInfo?.os === 'android';
+    } catch (e) {
+        // ignore
+    }
+
+    if (isAndroid) {
+        logToPopup('📱 Android detected: saving files without subfolders.');
+    }
+
     // Ensure in-page stop flag exists (used for WAV polling)
     try {
         const tab = await getSunoTab();
@@ -389,7 +402,11 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                 break;
             }
             const title = song.title || `Untitled_${song.id}`;
-            const filename = `${cleanFolder}/${sanitizeFilename(title)}_${song.id.slice(-4)}.wav`;
+            const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.wav`;
+            const folderPrefix = sanitizeFilename(cleanFolder);
+            const filename = isAndroid
+                ? (folderPrefix ? `${folderPrefix}-${baseName}` : baseName)
+                : `${cleanFolder}/${baseName}`;
             
             try {
                 // Request WAV conversion and poll until ready
@@ -486,7 +503,8 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     failedCount++;
                 }
             } catch (err) {
-                logToPopup(`⚠️ Failed: ${title}`);
+                const msg = (err && (err.message || err.toString)) ? (err.message || err.toString()) : '';
+                logToPopup(`⚠️ Failed: ${title}${msg ? ` (${msg})` : ''}`);
                 failedCount++;
             }
             
@@ -502,7 +520,11 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
             }
             if (song.audio_url) {
                 const title = song.title || `Untitled_${song.id}`;
-                const filename = `${cleanFolder}/${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
+                const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
+                const folderPrefix = sanitizeFilename(cleanFolder);
+                const filename = isAndroid
+                    ? (folderPrefix ? `${folderPrefix}-${baseName}` : baseName)
+                    : `${cleanFolder}/${baseName}`;
                 
                 try {
                     const downloadId = await api.downloads.download({
@@ -520,7 +542,8 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                         logToPopup(`📥 Downloaded ${downloadedCount}/${songs.length}...`);
                     }
                 } catch (err) {
-                    logToPopup(`⚠️ Failed: ${title}`);
+                    const msg = (err && (err.message || err.toString)) ? (err.message || err.toString()) : '';
+                    logToPopup(`⚠️ Failed: ${title}${msg ? ` (${msg})` : ''}`);
                     failedCount++;
                 }
                 
