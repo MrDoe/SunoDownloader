@@ -307,11 +307,29 @@
             padding: 10px 12px;
             background: #f8f8f8;
             border-radius: 6px;
+            flex-wrap: wrap;
         }
         
         #selectControls label {
             margin: 0;
             flex-shrink: 0;
+        }
+        
+        #filterControls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+            align-items: center;
+            padding: 10px 12px;
+            background: #f8f8f8;
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+        
+        #filterControls label {
+            margin: 0;
+            flex-shrink: 0;
+            font-size: 12px;
         }
         
         #songCount {
@@ -445,6 +463,12 @@
             border-radius: 6px;
         }
         
+        body.dark-mode #filterControls {
+            background: #1a1a2e;
+            border: 1px solid #444;
+            border-radius: 6px;
+        }
+        
         body.dark-mode #songCount {
             color: #888;
         }
@@ -519,8 +543,8 @@
         </div>
         
         <div class="checkbox-label">
-            <input title="Show public songs only" type="checkbox" id="publicOnly" checked> 
-            Show Public Songs Only
+            <input title="Fetch public songs only" type="checkbox" id="publicOnly" checked> 
+            Fetch Public Songs Only
         </div>
         
         <div class="btn-row">
@@ -532,6 +556,21 @@
     
     <div id="songListContainer">
         <input type="text" id="filterInput" placeholder="🔍 Search songs by title...">
+        
+        <div id="filterControls">
+            <label class="checkbox-label" style="margin: 0; padding: 0;">
+                <input type="checkbox" id="filterLiked">
+                ❤️ Liked Only
+            </label>
+            <label class="checkbox-label" style="margin: 0; padding: 0;">
+                <input type="checkbox" id="filterStems">
+                🎹 Stems Only
+            </label>
+            <label class="checkbox-label" style="margin: 0; padding: 0;">
+                <input type="checkbox" id="filterPublic">
+                🌐 Public Only
+            </label>
+        </div>
         
         <div id="selectControls">
             <label class="checkbox-label" style="margin: 0; padding: 0;">

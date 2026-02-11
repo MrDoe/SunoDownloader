@@ -16,6 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadBtn = document.getElementById("downloadBtn");
     const backBtn = document.getElementById("backBtn");
     const filterInput = document.getElementById("filterInput");
+    const filterLiked = document.getElementById("filterLiked");
+    const filterStems = document.getElementById("filterStems");
+    const filterPublic = document.getElementById("filterPublic");
     const selectAllCheckbox = document.getElementById("selectAll");
     const songList = document.getElementById("songList");
     const songCount = document.getElementById("songCount");
@@ -119,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     songListContainer.style.display = "block";
                     filterInput.value = "";
                     selectAllCheckbox.checked = true;
+                    await loadFilterPreferences();
                     renderSongList();
                     statusDiv.innerText = `${allSongs.length} cached songs. Checking for new...`;
 
@@ -165,6 +169,35 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         } catch (e) {
             console.error('Failed to save to storage:', e);
+        }
+    }
+    
+    async function saveFilterPreferences() {
+        try {
+            await api.storage.local.set({
+                sunoFilterLiked: filterLiked.checked,
+                sunoFilterStems: filterStems.checked,
+                sunoFilterPublic: filterPublic.checked
+            });
+        } catch (e) {
+            console.error('Failed to save filter preferences:', e);
+        }
+    }
+    
+    async function loadFilterPreferences() {
+        try {
+            const result = await api.storage.local.get(['sunoFilterLiked', 'sunoFilterStems', 'sunoFilterPublic']);
+            if (result.sunoFilterLiked !== undefined) {
+                filterLiked.checked = result.sunoFilterLiked;
+            }
+            if (result.sunoFilterStems !== undefined) {
+                filterStems.checked = result.sunoFilterStems;
+            }
+            if (result.sunoFilterPublic !== undefined) {
+                filterPublic.checked = result.sunoFilterPublic;
+            }
+        } catch (e) {
+            console.error('Failed to load filter preferences:', e);
         }
     }
 
@@ -215,13 +248,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // View cached songs
-    viewSongsBtn.addEventListener("click", () => {
+    viewSongsBtn.addEventListener("click", async () => {
         if (allSongs.length > 0) {
             filteredSongs = [...allSongs];
             settingsPanel.style.display = "none";
             songListContainer.style.display = "block";
             filterInput.value = "";
             selectAllCheckbox.checked = true;
+            await loadFilterPreferences();
             renderSongList();
             statusDiv.innerText = `${allSongs.length} cached songs. Checking for new...`;
             
@@ -245,6 +279,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filter input
     filterInput.addEventListener("input", () => {
         applyFilter();
+    });
+    
+    // Filter checkboxes
+    filterLiked.addEventListener("change", () => {
+        applyFilter();
+        saveFilterPreferences();
+    });
+    
+    filterStems.addEventListener("change", () => {
+        applyFilter();
+        saveFilterPreferences();
+    });
+    
+    filterPublic.addEventListener("change", () => {
+        applyFilter();
+        saveFilterPreferences();
     });
 
     // Select all checkbox
@@ -308,7 +358,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 filterInput.value = "";
                 selectAllCheckbox.checked = true;
                 
-                renderSongList();
+                loadFilterPreferences().then(() => {
+                    renderSongList();
+                });
                 saveToStorage();
                 statusDiv.innerText = `Found ${allSongs.length} songs.`;
             }
@@ -337,9 +389,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyFilter() {
         const filter = filterInput.value.toLowerCase();
-        filteredSongs = allSongs.filter(song => 
-            song.title.toLowerCase().includes(filter)
-        );
+        const showLikedOnly = filterLiked.checked;
+        const showStemsOnly = filterStems.checked;
+        const showPublicOnly = filterPublic.checked;
+        
+        filteredSongs = allSongs.filter(song => {
+            // Text filter
+            if (filter && !song.title.toLowerCase().includes(filter)) {
+                return false;
+            }
+            
+            // Liked filter
+            if (showLikedOnly && !song.is_liked) {
+                return false;
+            }
+            
+            // Stems filter
+            if (showStemsOnly && !song.is_stem) {
+                return false;
+            }
+            
+            // Public filter
+            if (showPublicOnly && !song.is_public) {
+                return false;
+            }
+            
+            return true;
+        });
         renderSongList();
     }
 
@@ -371,6 +447,20 @@ document.addEventListener('DOMContentLoaded', () => {
             visibilitySpan.className = song.is_public ? 'public' : 'private';
             visibilitySpan.textContent = song.is_public ? '🌐 Public' : '🔒 Private';
             metaDiv.appendChild(visibilitySpan);
+            
+            if (song.is_liked) {
+                const likedSpan = document.createElement("span");
+                likedSpan.textContent = ' • ❤️ Liked';
+                likedSpan.style.color = '#e91e63';
+                metaDiv.appendChild(likedSpan);
+            }
+            
+            if (song.is_stem) {
+                const stemSpan = document.createElement("span");
+                stemSpan.textContent = ' • 🎹 Stem';
+                stemSpan.style.color = '#9c27b0';
+                metaDiv.appendChild(stemSpan);
+            }
             
             if (song.created_at) {
                 metaDiv.appendChild(document.createTextNode(' • ' + formatDate(song.created_at)));

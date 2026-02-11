@@ -40,8 +40,8 @@
             filters: {
                 disliked: "False",
                 trashed: "False",
-                fromStudioProject: { presence: "False" },
-                stem: { presence: "False" }
+                fromStudioProject: { presence: "False" }
+                // Removed stem filter to include stems
             }
         };
         
@@ -168,7 +168,9 @@
                         title: clip.title || `Untitled_${clip.id}`,
                         audio_url: clip.audio_url,
                         is_public: clip.is_public,
-                        created_at: clip.created_at
+                        created_at: clip.created_at,
+                        is_liked: clip.is_liked || false,
+                        is_stem: clip.stem_of ? true : false
                     });
                 }
             }

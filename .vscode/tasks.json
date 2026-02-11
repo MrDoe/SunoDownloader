@@ -23,7 +23,7 @@
 				"--artifacts-dir",
 				"${workspaceFolder}/web-ext-artifacts",
 				"--filename",
-				"suno-downloader-0.6.2-firefox.zip",
+				"suno-downloader-0.7.0-firefox.zip",
 				"--overwrite-dest"
 			],
 			"group": "build"
@@ -39,7 +39,7 @@
 				"--artifacts-dir",
 				"${workspaceFolder}/web-ext-artifacts",
 				"--filename",
-				"suno-downloader-0.6.2-chrome.zip",
+				"suno-downloader-0.7.0-chrome.zip",
 				"--overwrite-dest"
 			],
 			"group": "build"
@@ -131,7 +131,10 @@
 			"args": [
 				"lint",
 				"--source-dir",
-				"${workspaceFolder}/chrome-plugin"
+				"${workspaceFolder}/chrome-plugin",
+				"--ignore-files",
+				"**/*.xcf",
+				"**/*.svg"
 			]
 		}
 	]
