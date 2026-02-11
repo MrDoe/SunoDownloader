@@ -4,6 +4,20 @@ const api = (typeof browser !== 'undefined') ? browser : chrome;
 let stopFetchRequested = false;
 let isFetching = false;
 
+// Handle browser action click - open options page on Android
+api.action.onClicked.addListener(async () => {
+    try {
+        const platformInfo = await api.runtime.getPlatformInfo();
+        // On Android, the popup doesn't work, so open the options page
+        if (platformInfo.os === 'android') {
+            api.runtime.openOptionsPage();
+        }
+        // On other platforms, the popup will open naturally (no need to handle)
+    } catch (e) {
+        console.error('Error handling action click:', e);
+    }
+});
+
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "fetch_songs") {
         stopFetchRequested = false;
