@@ -376,19 +376,56 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
         // ignore
     }
 
-    // Helper: download a single URL, using tabs.create on Android as fallback
+    // Helper: download a single URL, using in-page anchor trick on Android as fallback
     async function downloadOneFile(url, filename) {
         if (isAndroid) {
-            // On Firefox Android, downloads.download() silently fails.
-            // Use tabs.create to open the URL which triggers the native download dialog.
+            // On Firefox Android, downloads.download() silently fails and tabs.create
+            // just opens the file. Instead, inject a script into the Suno tab that
+            // creates an <a download> element and clicks it — this triggers the native
+            // download dialog reliably.
+            const sunoTab = await getSunoTab();
+            if (!sunoTab?.id) {
+                throw new Error('No Suno tab found for Android download');
+            }
             try {
-                const tab = await api.tabs.create({ url, active: false });
-                // Give browser a moment to start the download then close the tab
-                await new Promise(r => setTimeout(r, 3000));
-                try { await api.tabs.remove(tab.id); } catch (e) { /* tab may have closed itself */ }
+                const results = await api.scripting.executeScript({
+                    target: { tabId: sunoTab.id },
+                    world: "MAIN",
+                    func: async (fileUrl, suggestedName) => {
+                        try {
+                            // Fetch the file as a blob so we own the data
+                            const resp = await fetch(fileUrl);
+                            if (!resp.ok) return { error: `HTTP ${resp.status}` };
+                            const blob = await resp.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+
+                            const a = document.createElement('a');
+                            a.href = blobUrl;
+                            a.download = suggestedName;
+                            a.style.display = 'none';
+                            document.body.appendChild(a);
+                            a.click();
+
+                            // Clean up after a short delay
+                            setTimeout(() => {
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(blobUrl);
+                            }, 5000);
+
+                            return { ok: true };
+                        } catch (e) {
+                            return { error: e?.message || String(e) };
+                        }
+                    },
+                    args: [url, filename.split('/').pop() || filename]
+                });
+                const result = results?.[0]?.result;
+                if (result?.error) {
+                    throw new Error(result.error);
+                }
                 return true;
             } catch (e) {
-                throw new Error(`Tab download failed: ${e?.message || e}`);
+                throw new Error(`Android download failed: ${e?.message || e}`);
             }
         } else {
             const downloadId = await api.downloads.download({
@@ -568,7 +605,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     failedCount++;
                 }
                 
-                await new Promise(r => setTimeout(r, isAndroid ? 3500 : 200));
+                await new Promise(r => setTimeout(r, isAndroid ? 1500 : 200));
             }
         }
     }
