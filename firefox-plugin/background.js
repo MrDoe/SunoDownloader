@@ -360,7 +360,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     }
 
     if (isAndroid) {
-        logToPopup('📱 Android detected: saving files without subfolders.');
+        logToPopup('📱 Android detected: using direct URL downloads.');
     }
 
     // Ensure in-page stop flag exists (used for WAV polling)
@@ -374,6 +374,34 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
         }
     } catch (e) {
         // ignore
+    }
+
+    // Helper: download a single URL, using tabs.create on Android as fallback
+    async function downloadOneFile(url, filename) {
+        if (isAndroid) {
+            // On Firefox Android, downloads.download() silently fails.
+            // Use tabs.create to open the URL which triggers the native download dialog.
+            try {
+                const tab = await api.tabs.create({ url, active: false });
+                // Give browser a moment to start the download then close the tab
+                await new Promise(r => setTimeout(r, 3000));
+                try { await api.tabs.remove(tab.id); } catch (e) { /* tab may have closed itself */ }
+                return true;
+            } catch (e) {
+                throw new Error(`Tab download failed: ${e?.message || e}`);
+            }
+        } else {
+            const downloadId = await api.downloads.download({
+                url,
+                filename,
+                conflictAction: "uniquify"
+            });
+            if (typeof downloadId === 'number') {
+                activeDownloadIds.add(downloadId);
+                persistDownloadState();
+            }
+            return true;
+        }
     }
     
     let downloadedCount = 0;
@@ -418,10 +446,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
             }
             const title = song.title || `Untitled_${song.id}`;
             const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.wav`;
-            const folderPrefix = sanitizeFilename(cleanFolder);
-            const filename = isAndroid
-                ? (folderPrefix ? `${folderPrefix}-${baseName}` : baseName)
-                : `${cleanFolder}/${baseName}`;
+            const filename = `${cleanFolder}/${baseName}`;
             
             try {
                 // Request WAV conversion and poll until ready
@@ -499,15 +524,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                 }
                 
                 if (result?.url) {
-                    const downloadId = await api.downloads.download({
-                        url: result.url,
-                        filename: filename,
-                        conflictAction: "uniquify"
-                    });
-                    if (typeof downloadId === 'number') {
-                        activeDownloadIds.add(downloadId);
-                        persistDownloadState();
-                    }
+                    await downloadOneFile(result.url, filename);
                     downloadedCount++;
                     
                     if (downloadedCount % 5 === 0) {
@@ -536,21 +553,10 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
             if (song.audio_url) {
                 const title = song.title || `Untitled_${song.id}`;
                 const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
-                const folderPrefix = sanitizeFilename(cleanFolder);
-                const filename = isAndroid
-                    ? (folderPrefix ? `${folderPrefix}-${baseName}` : baseName)
-                    : `${cleanFolder}/${baseName}`;
+                const filename = `${cleanFolder}/${baseName}`;
                 
                 try {
-                    const downloadId = await api.downloads.download({
-                        url: song.audio_url,
-                        filename: filename,
-                        conflictAction: "uniquify"
-                    });
-                    if (typeof downloadId === 'number') {
-                        activeDownloadIds.add(downloadId);
-                        persistDownloadState();
-                    }
+                    await downloadOneFile(song.audio_url, filename);
                     downloadedCount++;
                     
                     if (downloadedCount % 5 === 0) {
@@ -562,7 +568,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     failedCount++;
                 }
                 
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, isAndroid ? 3500 : 200));
             }
         }
     }
