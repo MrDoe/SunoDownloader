@@ -360,7 +360,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     }
 
     if (isAndroid) {
-        logToPopup('📱 Android detected: using direct URL downloads.');
+        logToPopup('📱 Android detected: Please switch back to the Suno tab and keep it open while downloading.');
     }
 
     // Ensure in-page stop flag exists (used for WAV polling)
