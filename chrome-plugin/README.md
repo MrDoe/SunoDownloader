@@ -2,6 +2,15 @@
 
 This directory contains the Chrome version of the SunoDownloader extension.
 
+## Features
+
+- Download Suno songs in MP3 or WAV
+- Download lyrics in separate `.txt` files per song
+- Bulk download selected songs
+- Search and filter songs (liked, stems, public)
+- Dark mode and cached song list
+- Improved reliability with retry/rate-limit handling
+
 ## Installation
 
 ### From Chrome Web Store
@@ -29,3 +38,4 @@ This Chrome version includes:
 - Chrome-compatible manifest (Manifest V3)
 - Background service worker (required for Chrome)
 - No browser-specific settings (Chrome doesn't use `browser_specific_settings`)
+- Lyrics text download fallback for restrictive download URL environments

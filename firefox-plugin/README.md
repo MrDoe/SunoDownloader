@@ -2,6 +2,15 @@
 
 This directory contains the Firefox version of the SunoDownloader extension.
 
+## Features
+
+- Download Suno songs in MP3 or WAV
+- Download lyrics in separate `.txt` files per song
+- Bulk download selected songs
+- Search and filter songs (liked, stems, public)
+- Dark mode and cached song list
+- Improved Android compatibility for downloads
+
 ## Installation
 
 ### From Mozilla Add-ons Store
@@ -37,3 +46,4 @@ This Firefox version includes:
 - Firefox-specific manifest settings (`browser_specific_settings`)
 - Background scripts using the `scripts` array (Manifest V3 Firefox format)
 - Extension ID for Firefox Add-ons store
+- Fallback lyrics text download strategy for environments that block `data:` download URLs

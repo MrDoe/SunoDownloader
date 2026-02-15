@@ -10,10 +10,13 @@ A browser extension for downloading music from [Suno.com](https://suno.com). Com
 ## ✨ Features
 
 - 🎵 Download your published Suno songs in MP3 or WAV format
+- 📝 Download lyrics as separate `.txt` files (named by song title)
 - 📦 Bulk download with folder organization
-- 🔍 Search and filter your songs
+- 🔍 Search and filter your songs (liked, stems, public)
+- 🆕 Cached list with automatic new-song checks
 - 🌓 Dark mode support
-- 🚀 Fast and reliable downloads with rate limiting
+- 🚀 Fast and reliable downloads with retry/rate-limit handling
+- 📱 Improved Android download compatibility
 - 💾 Caches song list for quick access
 
 ## Repository Structure
@@ -174,6 +177,10 @@ Both versions use the same codebase with browser-specific manifests:
 **Issue**: "This extension could not be installed"
 - Make sure you selected the `manifest.json` file from `firefox-plugin` directory
 - Check Firefox version (requires 142.0+)
+
+**Issue**: Lyrics file is missing for some songs
+- Some songs may not have lyrics available from Suno (e.g. instrumental generations)
+- The extension tries both feed data and per-song API metadata before marking lyrics as missing
 
 ## Contributing
 
