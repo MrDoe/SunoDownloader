@@ -128,15 +128,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 formatSelect.value = result.sunoFormat;
             }
             if (data) {
-                // Check if data is older than 24 hours
-                const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-                if (data.timestamp && (Date.now() - data.timestamp) > maxAge) {
-                    await clearStorage();
-                    settingsPanel.style.display = "block";
-                    songListContainer.style.display = "none";
-                    return;
-                }
-                
                 allSongs = data.songs || [];
                 filteredSongs = [...allSongs];
                 

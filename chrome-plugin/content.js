@@ -11,6 +11,7 @@
     const maxPages = window.sunoMaxPages || 0; // 0 = unlimited
     const checkNewOnly = window.sunoCheckNewOnly || false;
     const knownIds = new Set(window.sunoKnownIds || []);
+    const userId = window.sunoUserId || null;
     const mode = window.sunoMode || "fetch"; // "fetch" to get list
 
     if (!token) {
@@ -42,7 +43,8 @@
                 action: "fetch_feed_page",
                 token,
                 cursor: cursorValue || null,
-                isPublicOnly
+                isPublicOnly,
+                userId
             }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout contacting background')), 25000))
         ]).catch((e) => ({ ok: false, status: 0, error: e?.message || String(e) }));
@@ -161,17 +163,15 @@
                     break;
                 }
 
-                if (clip.audio_url) {
-                    allSongs.push({
-                        id: clip.id,
-                        title: clip.title || `Untitled_${clip.id}`,
-                        audio_url: clip.audio_url,
-                        is_public: clip.is_public,
-                        created_at: clip.created_at,
-                        is_liked: clip.is_liked || false,
-                        is_stem: clip.stem_of ? true : false
-                    });
-                }
+                allSongs.push({
+                    id: clip.id,
+                    title: clip.title || `Untitled_${clip.id}`,
+                    audio_url: clip.audio_url || null,
+                    is_public: clip.is_public,
+                    created_at: clip.created_at,
+                    is_liked: clip.is_liked || false,
+                    is_stem: clip.stem_of ? true : false
+                });
             }
 
             if (foundKnownSong) {

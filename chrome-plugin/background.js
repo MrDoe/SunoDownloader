@@ -89,6 +89,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const token = message.token;
                 const cursorValue = message.cursor || null;
                 const isPublicOnly = !!message.isPublicOnly;
+                const userId = message.userId || null;
 
                 if (!token) {
                     sendResponse({ ok: false, status: 0, error: "Missing token" });
@@ -103,6 +104,13 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         fromStudioProject: { presence: "False" }
                     }
                 };
+
+                if (userId) {
+                    body.filters.user = {
+                        presence: "True",
+                        userId: userId
+                    };
+                }
 
                 if (isPublicOnly) {
                     body.filters.public = "True";
@@ -296,22 +304,25 @@ async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false, know
             return;
         }
 
+        const userId = await fetchCurrentUserId(token);
+
         if (!checkNewOnly) {
             logToPopup("✅ Token found! Fetching songs list...");
         }
 
         await api.scripting.executeScript({
             target: { tabId: tabId },
-            func: (t, p, m, c, k) => { 
+            func: (t, p, m, c, k, u) => { 
                 window.sunoAuthToken = t; 
                 window.sunoPublicOnly = p;
                 window.sunoMaxPages = m;
                 window.sunoCheckNewOnly = c;
                 window.sunoKnownIds = k;
+                window.sunoUserId = u;
                 window.sunoStopFetch = false;
                 window.sunoMode = "fetch";
             },
-            args: [token, isPublicOnly, maxPages, checkNewOnly, knownIds]
+            args: [token, isPublicOnly, maxPages, checkNewOnly, knownIds, userId]
         });
 
         await api.scripting.executeScript({
@@ -323,6 +334,60 @@ async function fetchSongsList(isPublicOnly, maxPages, checkNewOnly = false, know
         console.error(err);
         api.runtime.sendMessage({ action: "fetch_error", error: "❌ System Error: " + err.message });
     }
+}
+
+async function fetchCurrentUserId(token) {
+    try {
+        const endpoints = [
+            'https://studio-api.prod.suno.com/api/me/',
+            'https://studio-api.prod.suno.com/api/me'
+        ];
+
+        for (const url of endpoints) {
+            try {
+                const res = await fetch(url, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) continue;
+                const data = await res.json();
+
+                const direct = data?.id || data?.user_id || data?.user?.id || data?.profile?.id;
+                if (typeof direct === 'string' && direct.length > 0) return direct;
+
+                const fromTree = findUuidLikeId(data);
+                if (fromTree) return fromTree;
+            } catch (e) {
+                // try next endpoint
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+    return null;
+}
+
+function findUuidLikeId(obj) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const stack = [obj];
+    let safety = 0;
+
+    while (stack.length && safety < 5000) {
+        safety += 1;
+        const cur = stack.pop();
+        if (!cur || typeof cur !== 'object') continue;
+
+        for (const value of Object.values(cur)) {
+            if (typeof value === 'string' && uuidRegex.test(value)) {
+                return value;
+            }
+            if (value && typeof value === 'object') {
+                stack.push(value);
+            }
+        }
+    }
+
+    return null;
 }
 
 async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 0) {
