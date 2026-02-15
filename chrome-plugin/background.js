@@ -396,9 +396,201 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     function sanitizeFilename(name) {
         return name.replace(/[<>:"/\\|?*]/g, "").trim().substring(0, 100);
     }
+
+    function buildDownloadFilename(baseName) {
+        const folderPrefix = sanitizeFilename(cleanFolder);
+        if (isAndroid) {
+            return folderPrefix ? `${folderPrefix}-${baseName}` : baseName;
+        }
+        return cleanFolder ? `${cleanFolder}/${baseName}` : baseName;
+    }
+
+    async function downloadTextFile(text, filename) {
+        const dataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
+        const downloadId = await api.downloads.download({
+            url: dataUrl,
+            filename,
+            conflictAction: "uniquify"
+        });
+        if (typeof downloadId === 'number') {
+            activeDownloadIds.add(downloadId);
+            persistDownloadState();
+        }
+    }
+
+    function extractText(value) {
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed.length > 0 ? trimmed : null;
+        }
+
+        if (Array.isArray(value)) {
+            const parts = value.map(v => extractText(v)).filter(Boolean);
+            if (parts.length > 0) return parts.join('\n');
+        }
+
+        if (value && typeof value === 'object') {
+            const nestedCandidates = [
+                value.lyrics,
+                value.display_lyrics,
+                value.full_lyrics,
+                value.raw_lyrics,
+                value.prompt,
+                value.text,
+                value.content,
+                value.value
+            ];
+            for (const candidate of nestedCandidates) {
+                const text = extractText(candidate);
+                if (text) return text;
+            }
+        }
+
+        return null;
+    }
+
+    function extractLyricsFromData(data) {
+        if (!data || typeof data !== 'object') return null;
+
+        const directCandidates = [
+            data.lyrics,
+            data.display_lyrics,
+            data.full_lyrics,
+            data.raw_lyrics,
+            data.prompt,
+            data.metadata?.lyrics,
+            data.metadata?.display_lyrics,
+            data.metadata?.full_lyrics,
+            data.metadata?.raw_lyrics,
+            data.metadata?.prompt,
+            data.meta?.lyrics,
+            data.meta?.display_lyrics,
+            data.meta?.prompt,
+            data.clip?.lyrics,
+            data.clip?.display_lyrics,
+            data.clip?.prompt,
+            data.generation?.lyrics,
+            data.generation?.prompt
+        ];
+
+        for (const candidate of directCandidates) {
+            const text = extractText(candidate);
+            if (text) return text;
+        }
+
+        return null;
+    }
+
+    async function getAuthContext(authCtx) {
+        if (authCtx.failed) return authCtx;
+        if (authCtx.token && authCtx.tabId) return authCtx;
+
+        const tab = await getSunoTab();
+        if (!tab?.id || !tab.url || !tab.url.includes('suno.com')) {
+            authCtx.failed = true;
+            return authCtx;
+        }
+
+        authCtx.tabId = tab.id;
+
+        if (!authCtx.token) {
+            const tokenResults = await api.scripting.executeScript({
+                target: { tabId: tab.id },
+                world: "MAIN",
+                func: async () => {
+                    try {
+                        if (window.Clerk && window.Clerk.session) {
+                            return await window.Clerk.session.getToken();
+                        }
+                        return null;
+                    } catch (e) {
+                        return null;
+                    }
+                }
+            });
+            authCtx.token = tokenResults?.[0]?.result || null;
+            if (!authCtx.token) {
+                authCtx.failed = true;
+            }
+        }
+
+        return authCtx;
+    }
+
+    async function fetchLyricsFromApi(songId, authCtx) {
+        const ctx = await getAuthContext(authCtx);
+        if (!ctx.token || !ctx.tabId) return null;
+
+        const results = await api.scripting.executeScript({
+            target: { tabId: ctx.tabId },
+            world: "MAIN",
+            func: async (clipId, authToken) => {
+                const endpoints = [
+                    `https://studio-api.prod.suno.com/api/gen/${clipId}/`,
+                    `https://studio-api.prod.suno.com/api/gen/${clipId}`,
+                    `https://studio-api.prod.suno.com/api/gen/${clipId}/metadata/`,
+                    `https://studio-api.prod.suno.com/api/gen/${clipId}/metadata`
+                ];
+
+                for (const url of endpoints) {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${authToken}`,
+                                'Accept': 'application/json'
+                            }
+                        });
+                        if (!response.ok) continue;
+                        const data = await response.json();
+                        return data;
+                    } catch (e) {
+                        // try next endpoint
+                    }
+                }
+
+                return null;
+            },
+            args: [songId, ctx.token]
+        });
+
+        return results?.[0]?.result || null;
+    }
+
+    async function resolveLyricsForSong(song, authCtx) {
+        const fromSong = typeof song.lyrics === 'string' ? song.lyrics.trim() : '';
+        if (fromSong) return fromSong;
+
+        try {
+            const apiData = await fetchLyricsFromApi(song.id, authCtx);
+            const extracted = extractLyricsFromData(apiData);
+            return extracted || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    async function downloadLyricsForSong(song) {
+        const title = song.title || `Untitled_${song.id}`;
+        const lyrics = await resolveLyricsForSong(song, lyricsAuthContext);
+        if (!lyrics) {
+            return { downloaded: false, missing: true, title };
+        }
+
+        const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.txt`;
+        const filename = buildDownloadFilename(baseName);
+        const textContent = `${title}\n\n${lyrics}\n`;
+
+        try {
+            await downloadTextFile(textContent, filename);
+            return { downloaded: true, missing: false, title };
+        } catch (err) {
+            return { downloaded: false, missing: false, title, error: err?.message || String(err) };
+        }
+    }
     
     const formatLabel = format.toUpperCase();
-    logToPopup(`🚀 Starting download of ${songs.length} ${formatLabel} files...`);
+    logToPopup(`🚀 Starting download of ${songs.length} ${formatLabel} files + lyrics...`);
 
     // Some platforms (notably Firefox Android) may not support subfolders in downloads filenames.
     let isAndroid = false;
@@ -427,7 +619,10 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     }
     
     let downloadedCount = 0;
+    let lyricsDownloadedCount = 0;
+    let lyricsMissingCount = 0;
     let failedCount = 0;
+    const lyricsAuthContext = { token: null, tabId: null, failed: false };
     
     // For WAV downloads, we need to use the authenticated API
     if (format === 'wav') {
@@ -460,6 +655,8 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
             api.runtime.sendMessage({ action: "download_complete" });
             return;
         }
+        lyricsAuthContext.token = token;
+        lyricsAuthContext.tabId = tabId;
         
         for (const song of songs) {
             if (stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId) {
@@ -468,10 +665,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
             }
             const title = song.title || `Untitled_${song.id}`;
             const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.wav`;
-            const folderPrefix = sanitizeFilename(cleanFolder);
-            const filename = isAndroid
-                ? (folderPrefix ? `${folderPrefix}-${baseName}` : baseName)
-                : `${cleanFolder}/${baseName}`;
+            const filename = buildDownloadFilename(baseName);
             
             try {
                 // Request WAV conversion and poll until ready
@@ -567,6 +761,19 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     logToPopup(`⚠️ No WAV URL: ${title}`);
                     failedCount++;
                 }
+
+                if (!(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
+                    const lyricsResult = await downloadLyricsForSong(song);
+                    if (lyricsResult.downloaded) {
+                        lyricsDownloadedCount++;
+                    } else if (lyricsResult.missing) {
+                        lyricsMissingCount++;
+                        logToPopup(`⚠️ No lyrics found: ${title}`);
+                    } else if (lyricsResult.error) {
+                        failedCount++;
+                        logToPopup(`⚠️ Lyrics failed: ${title} (${lyricsResult.error})`);
+                    }
+                }
             } catch (err) {
                 const msg = (err && (err.message || err.toString)) ? (err.message || err.toString()) : '';
                 logToPopup(`⚠️ Failed: ${title}${msg ? ` (${msg})` : ''}`);
@@ -586,10 +793,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
             if (song.audio_url) {
                 const title = song.title || `Untitled_${song.id}`;
                 const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
-                const folderPrefix = sanitizeFilename(cleanFolder);
-                const filename = isAndroid
-                    ? (folderPrefix ? `${folderPrefix}-${baseName}` : baseName)
-                    : `${cleanFolder}/${baseName}`;
+                const filename = buildDownloadFilename(baseName);
                 
                 try {
                     const downloadId = await api.downloads.download({
@@ -614,16 +818,30 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                 
                 await new Promise(r => setTimeout(r, 200));
             }
+
+            if (!(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
+                const title = song.title || `Untitled_${song.id}`;
+                const lyricsResult = await downloadLyricsForSong(song);
+                if (lyricsResult.downloaded) {
+                    lyricsDownloadedCount++;
+                } else if (lyricsResult.missing) {
+                    lyricsMissingCount++;
+                    logToPopup(`⚠️ No lyrics found: ${title}`);
+                } else if (lyricsResult.error) {
+                    failedCount++;
+                    logToPopup(`⚠️ Lyrics failed: ${title} (${lyricsResult.error})`);
+                }
+            }
         }
     }
     
     const stopped = stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId;
     if (stopped) {
-        logToPopup(`⏹️ STOPPED. Downloaded ${downloadedCount} song(s) (${failedCount} failed).`);
+        logToPopup(`⏹️ STOPPED. Downloaded ${downloadedCount} song(s), ${lyricsDownloadedCount} lyrics file(s) (${failedCount} failed, ${lyricsMissingCount} lyrics missing).`);
     } else if (failedCount > 0) {
-        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs (${failedCount} failed).`);
+        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs + ${lyricsDownloadedCount} lyrics file(s) (${failedCount} failed, ${lyricsMissingCount} lyrics missing).`);
     } else {
-        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs.`);
+        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs + ${lyricsDownloadedCount} lyrics file(s) (${lyricsMissingCount} lyrics missing).`);
     }
 
     // Reset download state

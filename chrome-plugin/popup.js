@@ -346,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             songs: songsToDownload
         });
         
-        statusDiv.innerText = `Downloading ${songsToDownload.length} songs...`;
+        statusDiv.innerText = `Downloading ${songsToDownload.length} songs + lyrics...`;
     });
 
     // Stop downloading

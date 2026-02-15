@@ -35,6 +35,102 @@
     const minDelay = 200;
     const maxDelay = 5000;
 
+    function isStemClip(clip) {
+        if (!clip || typeof clip !== 'object') return false;
+
+        if (clip.is_stem === true || clip.stem_of || clip.stem_of_id) return true;
+
+        const directStrings = [
+            clip.type,
+            clip.clip_type,
+            clip.generation_type,
+            clip.generation_mode,
+            clip.source,
+            clip.variant
+        ];
+
+        for (const value of directStrings) {
+            if (typeof value === 'string' && value.toLowerCase().includes('stem')) return true;
+        }
+
+        const nested = [clip.metadata, clip.meta, clip.generation, clip.model, clip.source_clip, clip.parent_clip];
+        for (const obj of nested) {
+            if (!obj || typeof obj !== 'object') continue;
+            for (const v of Object.values(obj)) {
+                if (typeof v === 'string' && v.toLowerCase().includes('stem')) return true;
+                if (v === true && (obj.is_stem === true || obj.stem === true)) return true;
+            }
+        }
+
+        if (Array.isArray(clip.tags) && clip.tags.some(t => typeof t === 'string' && t.toLowerCase().includes('stem'))) {
+            return true;
+        }
+
+        if (typeof clip.title === 'string' && /\bstem(s)?\b/i.test(clip.title)) return true;
+
+        return false;
+    }
+
+    function extractText(value) {
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed.length > 0 ? trimmed : null;
+        }
+
+        if (Array.isArray(value)) {
+            const parts = value
+                .map(v => extractText(v))
+                .filter(Boolean);
+            if (parts.length > 0) return parts.join('\n');
+        }
+
+        if (value && typeof value === 'object') {
+            const nestedCandidates = [
+                value.lyrics,
+                value.display_lyrics,
+                value.full_lyrics,
+                value.raw_lyrics,
+                value.prompt,
+                value.text,
+                value.content,
+                value.value
+            ];
+            for (const candidate of nestedCandidates) {
+                const text = extractText(candidate);
+                if (text) return text;
+            }
+        }
+
+        return null;
+    }
+
+    function extractLyricsFromClip(clip) {
+        if (!clip || typeof clip !== 'object') return null;
+
+        const directCandidates = [
+            clip.lyrics,
+            clip.display_lyrics,
+            clip.full_lyrics,
+            clip.raw_lyrics,
+            clip.prompt,
+            clip.metadata?.lyrics,
+            clip.metadata?.display_lyrics,
+            clip.metadata?.full_lyrics,
+            clip.metadata?.raw_lyrics,
+            clip.metadata?.prompt,
+            clip.meta?.lyrics,
+            clip.meta?.display_lyrics,
+            clip.meta?.prompt
+        ];
+
+        for (const candidate of directCandidates) {
+            const text = extractText(candidate);
+            if (text) return text;
+        }
+
+        return null;
+    }
+
     async function fetchPage(cursorValue) {
         // IMPORTANT (Firefox Android compatibility): do the network request in the background
         // to avoid content-script fetch/CORS edge cases.
@@ -167,10 +263,11 @@
                     id: clip.id,
                     title: clip.title || `Untitled_${clip.id}`,
                     audio_url: clip.audio_url || null,
+                    lyrics: extractLyricsFromClip(clip),
                     is_public: clip.is_public,
                     created_at: clip.created_at,
                     is_liked: clip.is_liked || false,
-                    is_stem: clip.stem_of ? true : false
+                    is_stem: isStemClip(clip)
                 });
             }
 
