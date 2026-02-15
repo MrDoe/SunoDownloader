@@ -23,7 +23,7 @@
 				"--artifacts-dir",
 				"${workspaceFolder}/web-ext-artifacts",
 				"--filename",
-				"suno-downloader-0.8.9-firefox.zip",
+				"suno-downloader-0.9.0-firefox.zip",
 				"--overwrite-dest"
 			],
 			"group": "build"
@@ -39,7 +39,7 @@
 				"--artifacts-dir",
 				"${workspaceFolder}/web-ext-artifacts",
 				"--filename",
-				"suno-downloader-0.8.9-chrome.zip",
+				"suno-downloader-0.9.0-chrome.zip",
 				"--overwrite-dest"
 			],
 			"group": "build"

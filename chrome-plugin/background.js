@@ -406,15 +406,62 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     }
 
     async function downloadTextFile(text, filename) {
+        async function downloadTextFileViaPage(fileText, fullFilename) {
+            const sunoTab = await getSunoTab();
+            if (!sunoTab?.id) {
+                throw new Error('No Suno tab found for text download fallback');
+            }
+
+            const results = await api.scripting.executeScript({
+                target: { tabId: sunoTab.id },
+                world: "MAIN",
+                func: async (payloadText, suggestedName) => {
+                    try {
+                        const blob = new Blob([payloadText], { type: 'text/plain;charset=utf-8' });
+                        const blobUrl = URL.createObjectURL(blob);
+
+                        const a = document.createElement('a');
+                        a.href = blobUrl;
+                        a.download = suggestedName;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+
+                        setTimeout(() => {
+                            try { document.body.removeChild(a); } catch (e) {}
+                            try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+                        }, 5000);
+
+                        return { ok: true };
+                    } catch (e) {
+                        return { error: e?.message || String(e) };
+                    }
+                },
+                args: [fileText, (fullFilename.split('/').pop() || fullFilename)]
+            });
+
+            const result = results?.[0]?.result;
+            if (result?.error) {
+                throw new Error(result.error);
+            }
+        }
+
         const dataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
-        const downloadId = await api.downloads.download({
-            url: dataUrl,
-            filename,
-            conflictAction: "uniquify"
-        });
-        if (typeof downloadId === 'number') {
-            activeDownloadIds.add(downloadId);
-            persistDownloadState();
+        try {
+            const downloadId = await api.downloads.download({
+                url: dataUrl,
+                filename,
+                conflictAction: "uniquify"
+            });
+            if (typeof downloadId === 'number') {
+                activeDownloadIds.add(downloadId);
+                persistDownloadState();
+            }
+        } catch (err) {
+            const msg = err?.message || String(err);
+            const denied = /access denied|error processing url|invalid url|unsupported url/i.test(msg);
+            if (!denied) throw err;
+            await downloadTextFileViaPage(text, filename);
         }
     }
 

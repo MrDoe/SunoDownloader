@@ -421,18 +421,18 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     }
 
     async function downloadTextFile(text, filename) {
-        if (isAndroid) {
+        async function downloadTextFileViaPage(fileText, fullFilename) {
             const sunoTab = await getSunoTab();
             if (!sunoTab?.id) {
-                throw new Error('No Suno tab found for Android text download');
+                throw new Error('No Suno tab found for text download fallback');
             }
 
             const results = await api.scripting.executeScript({
                 target: { tabId: sunoTab.id },
                 world: "MAIN",
-                func: async (fileText, suggestedName) => {
+                func: async (payloadText, suggestedName) => {
                     try {
-                        const blob = new Blob([fileText], { type: 'text/plain;charset=utf-8' });
+                        const blob = new Blob([payloadText], { type: 'text/plain;charset=utf-8' });
                         const blobUrl = URL.createObjectURL(blob);
 
                         const a = document.createElement('a');
@@ -443,8 +443,8 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                         a.click();
 
                         setTimeout(() => {
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(blobUrl);
+                            try { document.body.removeChild(a); } catch (e) {}
+                            try { URL.revokeObjectURL(blobUrl); } catch (e) {}
                         }, 5000);
 
                         return { ok: true };
@@ -452,25 +452,36 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                         return { error: e?.message || String(e) };
                     }
                 },
-                args: [text, filename.split('/').pop() || filename]
+                args: [fileText, (fullFilename.split('/').pop() || fullFilename)]
             });
 
             const result = results?.[0]?.result;
             if (result?.error) {
                 throw new Error(result.error);
             }
+        }
+
+        if (isAndroid) {
+            await downloadTextFileViaPage(text, filename);
             return;
         }
 
         const dataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
-        const downloadId = await api.downloads.download({
-            url: dataUrl,
-            filename,
-            conflictAction: "uniquify"
-        });
-        if (typeof downloadId === 'number') {
-            activeDownloadIds.add(downloadId);
-            persistDownloadState();
+        try {
+            const downloadId = await api.downloads.download({
+                url: dataUrl,
+                filename,
+                conflictAction: "uniquify"
+            });
+            if (typeof downloadId === 'number') {
+                activeDownloadIds.add(downloadId);
+                persistDownloadState();
+            }
+        } catch (err) {
+            const msg = err?.message || String(err);
+            const denied = /access denied|error processing url|invalid url|unsupported url/i.test(msg);
+            if (!denied) throw err;
+            await downloadTextFileViaPage(text, filename);
         }
     }
 

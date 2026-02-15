@@ -26,6 +26,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsPanel = document.getElementById("settingsPanel");
     const songListContainer = document.getElementById("songListContainer");
     const darkModeToggle = document.getElementById("darkModeToggle");
+    const versionFooter = document.getElementById("versionFooter");
+
+    try {
+        const version = api.runtime.getManifest()?.version;
+        if (versionFooter && version) {
+            versionFooter.textContent = `v${version}`;
+        }
+    } catch (e) {
+        if (versionFooter) {
+            versionFooter.textContent = "v?";
+        }
+    }
 
     // Load dark mode preference and apply it
     loadDarkModePreference();
