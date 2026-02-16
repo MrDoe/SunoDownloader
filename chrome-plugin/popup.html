@@ -7,7 +7,8 @@
         
         body {
             width: 420px;
-            min-height: 700px;
+            min-height: 620px;
+            height: 620px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: #333;
@@ -171,7 +172,7 @@
         #status {
             margin-top: 14px;
             font-size: 12px;
-            height: 120px;
+            height: 88px;
             overflow-y: auto;
             border: 1px solid #e0e0e0;
             border-radius: 6px;
@@ -229,7 +230,7 @@
         }
         
         #songList {
-            max-height: 300px;
+            max-height: 220px;
             overflow-y: auto;
             border: 1px solid #e0e0e0;
             border-radius: 6px;
@@ -543,14 +544,6 @@
         </div>
         
         <div class="form-group">
-            <label>Audio Format</label>
-            <select id="format" title="Select audio format" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;">
-                <option value="mp3">🎵 MP3 (smaller file size)</option>
-                <option value="wav">🔊 WAV (lossless quality)</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
             <label>Max Pages to Load</label>
             <input type="number" id="maxPages" value="0" min="0" style="width: 100px;" placeholder="0 for unlimited">
         </div>
@@ -568,20 +561,28 @@
     </div>
     
     <div id="songListContainer">
+        <div class="form-group">
+            <label>Audio Format</label>
+            <select id="format" title="Select audio format" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;">
+                <option value="mp3">🎵 MP3 (smaller file size)</option>
+                <option value="wav">🔊 WAV (lossless quality)</option>
+            </select>
+        </div>
+
         <input type="text" id="filterInput" placeholder="🔍 Search songs by title...">
         
         <div id="filterControls">
             <label class="checkbox-label" style="margin: 0; padding: 0;">
                 <input type="checkbox" id="filterLiked">
-                ❤️ Liked Only
+                ❤️ Liked
             </label>
             <label class="checkbox-label" style="margin: 0; padding: 0;">
                 <input type="checkbox" id="filterStems">
-                🎹 Stems Only
+                🎹 Stems
             </label>
             <label class="checkbox-label" style="margin: 0; padding: 0;">
                 <input type="checkbox" id="filterPublic">
-                🌐 Public Only
+                🌐 Public
             </label>
         </div>
         
