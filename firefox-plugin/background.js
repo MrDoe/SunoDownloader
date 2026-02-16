@@ -211,7 +211,13 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
         activeDownloadIds = new Set();
         persistDownloadState({ startedAt: Date.now() });
         broadcastDownloadState();
-        downloadSelectedSongs(message.folderName, message.songs, message.format || 'mp3', currentDownloadJobId);
+        downloadSelectedSongs(
+            message.folderName,
+            message.songs,
+            message.format || 'mp3',
+            currentDownloadJobId,
+            normalizeDownloadOptions(message.downloadOptions)
+        );
     }
 
     if (message.action === "stop_download") {
@@ -405,7 +411,15 @@ function findUuidLikeId(obj) {
     return null;
 }
 
-async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 0) {
+function normalizeDownloadOptions(options) {
+    return {
+        music: options?.music !== false,
+        lyrics: options?.lyrics !== false,
+        image: options?.image !== false
+    };
+}
+
+async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 0, downloadOptions = { music: true, lyrics: true, image: true }) {
     const cleanFolder = folderName.replace(/[^a-zA-Z0-9_-]/g, "");
     
     function sanitizeFilename(name) {
@@ -584,7 +598,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
         return authCtx;
     }
 
-    async function fetchLyricsFromApi(songId, authCtx) {
+    async function fetchSongDataFromApi(songId, authCtx) {
         const ctx = await getAuthContext(authCtx);
         if (!ctx.token || !ctx.tabId) return null;
 
@@ -629,11 +643,134 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
         if (fromSong) return fromSong;
 
         try {
-            const apiData = await fetchLyricsFromApi(song.id, authCtx);
+            const apiData = await fetchSongDataFromApi(song.id, authCtx);
             const extracted = extractLyricsFromData(apiData);
             return extracted || '';
         } catch (e) {
             return '';
+        }
+    }
+
+    function extractImageUrlFromData(data) {
+        if (!data || typeof data !== 'object') return null;
+
+        function scoreImageUrl(url) {
+            if (!url || typeof url !== 'string') return -1;
+            let score = 0;
+            const u = url.toLowerCase();
+
+            if (/\b(large|full|orig|original|hd|uhd|4k|2048|1536|1024)\b/.test(u)) score += 6;
+            if (/\b(image_large|cover_image)\b/.test(u)) score += 4;
+            if (/\bthumbnail|thumb|small|avatar\b/.test(u)) score -= 8;
+            if (/[?&](w|h|width|height)=\d{1,3}\b/.test(u)) score -= 3;
+
+            return score;
+        }
+
+        const directCandidates = [
+            data.image_large_url,
+            data.cover_image_url,
+            data.image_url,
+            data.cover_url,
+            data.image,
+            data.thumbnail_url,
+            data.artwork_url,
+            data.image_hd_url,
+            data.image_4k_url,
+            data.image_original_url,
+            data.metadata?.image_url,
+            data.metadata?.image_large_url,
+            data.metadata?.image,
+            data.metadata?.cover_url,
+            data.metadata?.cover_image_url,
+            data.meta?.image_url,
+            data.meta?.image_large_url,
+            data.meta?.image,
+            data.meta?.cover_url,
+            data.meta?.cover_image_url,
+            data.clip?.image_url,
+            data.clip?.image_large_url,
+            data.clip?.image,
+            data.clip?.cover_url,
+            data.clip?.cover_image_url,
+            data.generation?.image_url,
+            data.generation?.image_large_url,
+            data.generation?.image,
+            data.generation?.cover_url,
+            data.generation?.cover_image_url
+        ];
+
+        let bestUrl = null;
+        let bestScore = -999;
+        for (const candidate of directCandidates) {
+            if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate.trim())) {
+                const url = candidate.trim();
+                const score = scoreImageUrl(url);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestUrl = url;
+                }
+            }
+        }
+
+        return bestUrl;
+    }
+
+    function isLikelyThumbnailUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        const u = url.toLowerCase();
+        return /\bthumbnail|thumb|small|avatar\b/.test(u) || /[?&](w|h|width|height)=\d{1,3}\b/.test(u);
+    }
+
+    async function resolveImageUrlForSong(song, authCtx) {
+        const fromSong = typeof song.image_url === 'string' ? song.image_url.trim() : '';
+        const validFromSong = (fromSong && /^https?:\/\//i.test(fromSong)) ? fromSong : '';
+        const songIsThumb = isLikelyThumbnailUrl(validFromSong);
+
+        // Keep the existing URL only if it doesn't look like a thumbnail.
+        if (validFromSong && !songIsThumb) return validFromSong;
+
+        try {
+            const apiData = await fetchSongDataFromApi(song.id, authCtx);
+            const fromApi = extractImageUrlFromData(apiData) || '';
+            if (fromApi) return fromApi;
+
+            // Fallback only when API did not provide a better URL.
+            return validFromSong || '';
+        } catch (e) {
+            return validFromSong || '';
+        }
+    }
+
+    function getImageExtensionFromUrl(url) {
+        try {
+            const pathname = new URL(url).pathname || '';
+            const ext = pathname.split('.').pop()?.toLowerCase();
+            if (ext && /^[a-z0-9]{2,5}$/.test(ext)) {
+                return ext;
+            }
+        } catch (e) {
+            // ignore
+        }
+        return 'jpg';
+    }
+
+    async function downloadImageForSong(song) {
+        const title = song.title || `Untitled_${song.id}`;
+        const imageUrl = await resolveImageUrlForSong(song, lyricsAuthContext);
+        if (!imageUrl) {
+            return { downloaded: false, missing: true, title };
+        }
+
+        const ext = getImageExtensionFromUrl(imageUrl);
+        const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}_cover.${ext}`;
+        const filename = buildDownloadFilename(baseName);
+
+        try {
+            await downloadOneFile(imageUrl, filename);
+            return { downloaded: true, missing: false, title };
+        } catch (err) {
+            return { downloaded: false, missing: false, title, error: err?.message || String(err) };
         }
     }
 
@@ -656,8 +793,26 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
         }
     }
     
-    const formatLabel = format.toUpperCase();
-    logToPopup(`🚀 Starting download of ${songs.length} ${formatLabel} files + lyrics...`);
+    const shouldDownloadMusic = !!downloadOptions?.music;
+    const shouldDownloadLyrics = !!downloadOptions?.lyrics;
+    const shouldDownloadImage = !!downloadOptions?.image;
+    const selectedTypes = [];
+    if (shouldDownloadMusic) selectedTypes.push(format.toUpperCase());
+    if (shouldDownloadLyrics) selectedTypes.push('lyrics');
+    if (shouldDownloadImage) selectedTypes.push('images');
+
+    if (selectedTypes.length === 0) {
+        logToPopup('⚠️ Nothing selected to download.');
+        stopDownloadRequested = false;
+        isDownloading = false;
+        activeDownloadIds = new Set();
+        persistDownloadState({ finishedAt: Date.now() });
+        broadcastDownloadState();
+        api.runtime.sendMessage({ action: "download_complete", stopped: false });
+        return;
+    }
+
+    logToPopup(`🚀 Starting download of ${songs.length} song(s): ${selectedTypes.join(', ')}...`);
 
     // Firefox Android: subfolders in downloads filename are often unsupported.
     let isAndroid = false;
@@ -753,11 +908,13 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
     let downloadedCount = 0;
     let lyricsDownloadedCount = 0;
     let lyricsMissingCount = 0;
+    let imagesDownloadedCount = 0;
+    let imagesMissingCount = 0;
     let failedCount = 0;
     const lyricsAuthContext = { token: null, tabId: null, failed: false };
     
     // For WAV downloads, we need to use the authenticated API
-    if (format === 'wav') {
+    if (format === 'wav' && shouldDownloadMusic) {
         // Get the active tab to execute the WAV conversion requests
         const tab = await getSunoTab();
         if (!tab?.id || !tab.url || !tab.url.includes("suno.com")) {
@@ -886,7 +1043,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     failedCount++;
                 }
 
-                if (!(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
+                if (shouldDownloadLyrics && !(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
                     const lyricsResult = await downloadLyricsForSong(song);
                     if (lyricsResult.downloaded) {
                         lyricsDownloadedCount++;
@@ -896,6 +1053,19 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     } else if (lyricsResult.error) {
                         failedCount++;
                         logToPopup(`⚠️ Lyrics failed: ${title} (${lyricsResult.error})`);
+                    }
+                }
+
+                if (shouldDownloadImage && !(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
+                    const imageResult = await downloadImageForSong(song);
+                    if (imageResult.downloaded) {
+                        imagesDownloadedCount++;
+                    } else if (imageResult.missing) {
+                        imagesMissingCount++;
+                        logToPopup(`⚠️ No image found: ${title}`);
+                    } else if (imageResult.error) {
+                        failedCount++;
+                        logToPopup(`⚠️ Image failed: ${title} (${imageResult.error})`);
                     }
                 }
             } catch (err) {
@@ -914,7 +1084,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                 logToPopup("⏹️ Download stopped by user.");
                 break;
             }
-            if (song.audio_url) {
+            if (shouldDownloadMusic && song.audio_url) {
                 const title = song.title || `Untitled_${song.id}`;
                 const baseName = `${sanitizeFilename(title)}_${song.id.slice(-4)}.mp3`;
                 const filename = buildDownloadFilename(baseName);
@@ -935,7 +1105,7 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                 await new Promise(r => setTimeout(r, isAndroid ? 1500 : 200));
             }
 
-            if (!(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
+            if (shouldDownloadLyrics && !(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
                 const title = song.title || `Untitled_${song.id}`;
                 const lyricsResult = await downloadLyricsForSong(song);
                 if (lyricsResult.downloaded) {
@@ -948,16 +1118,36 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                     logToPopup(`⚠️ Lyrics failed: ${title} (${lyricsResult.error})`);
                 }
             }
+
+            if (shouldDownloadImage && !(stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId)) {
+                const title = song.title || `Untitled_${song.id}`;
+                const imageResult = await downloadImageForSong(song);
+                if (imageResult.downloaded) {
+                    imagesDownloadedCount++;
+                } else if (imageResult.missing) {
+                    imagesMissingCount++;
+                    logToPopup(`⚠️ No image found: ${title}`);
+                } else if (imageResult.error) {
+                    failedCount++;
+                    logToPopup(`⚠️ Image failed: ${title} (${imageResult.error})`);
+                }
+            }
         }
     }
     
     const stopped = stopDownloadRequested || !isDownloading || jobId !== currentDownloadJobId;
+    const parts = [];
+    if (shouldDownloadMusic) parts.push(`${downloadedCount} song(s)`);
+    if (shouldDownloadLyrics) parts.push(`${lyricsDownloadedCount} lyrics file(s)${lyricsMissingCount ? ` (${lyricsMissingCount} missing)` : ''}`);
+    if (shouldDownloadImage) parts.push(`${imagesDownloadedCount} image file(s)${imagesMissingCount ? ` (${imagesMissingCount} missing)` : ''}`);
+    const summary = parts.join(', ');
+
     if (stopped) {
-        logToPopup(`⏹️ STOPPED. Downloaded ${downloadedCount} song(s), ${lyricsDownloadedCount} lyrics file(s) (${failedCount} failed, ${lyricsMissingCount} lyrics missing).`);
+        logToPopup(`⏹️ STOPPED. Downloaded ${summary}${failedCount ? ` (${failedCount} failed)` : ''}.`);
     } else if (failedCount > 0) {
-        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs + ${lyricsDownloadedCount} lyrics file(s) (${failedCount} failed, ${lyricsMissingCount} lyrics missing).`);
+        logToPopup(`🎉 COMPLETE! Downloaded ${summary} (${failedCount} failed).`);
     } else {
-        logToPopup(`🎉 COMPLETE! Downloaded ${downloadedCount} songs + ${lyricsDownloadedCount} lyrics file(s) (${lyricsMissingCount} lyrics missing).`);
+        logToPopup(`🎉 COMPLETE! Downloaded ${summary}.`);
     }
 
     // Reset download state

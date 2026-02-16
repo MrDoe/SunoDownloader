@@ -131,6 +131,70 @@
         return null;
     }
 
+    function extractUrl(value) {
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (/^https?:\/\//i.test(trimmed)) {
+                return trimmed;
+            }
+        }
+
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                const url = extractUrl(item);
+                if (url) return url;
+            }
+        }
+
+        if (value && typeof value === 'object') {
+            const nestedCandidates = [
+                value.url,
+                value.src,
+                value.image_url,
+                value.image,
+                value.cover_url,
+                value.cover_image_url,
+                value.thumbnail_url,
+                value.artwork_url
+            ];
+            for (const candidate of nestedCandidates) {
+                const url = extractUrl(candidate);
+                if (url) return url;
+            }
+        }
+
+        return null;
+    }
+
+    function extractImageUrlFromClip(clip) {
+        if (!clip || typeof clip !== 'object') return null;
+
+        const directCandidates = [
+            clip.image_url,
+            clip.image,
+            clip.image_large_url,
+            clip.cover_url,
+            clip.cover_image_url,
+            clip.thumbnail_url,
+            clip.artwork_url,
+            clip.metadata?.image_url,
+            clip.metadata?.image,
+            clip.metadata?.cover_url,
+            clip.metadata?.cover_image_url,
+            clip.meta?.image_url,
+            clip.meta?.image,
+            clip.meta?.cover_url,
+            clip.meta?.cover_image_url
+        ];
+
+        for (const candidate of directCandidates) {
+            const url = extractUrl(candidate);
+            if (url) return url;
+        }
+
+        return null;
+    }
+
     async function fetchPage(cursorValue) {
         // IMPORTANT (Firefox Android compatibility): do the network request in the background
         // to avoid content-script fetch/CORS edge cases.
@@ -263,6 +327,7 @@
                     id: clip.id,
                     title: clip.title || `Untitled_${clip.id}`,
                     audio_url: clip.audio_url || null,
+                    image_url: extractImageUrlFromClip(clip),
                     lyrics: extractLyricsFromClip(clip),
                     is_public: clip.is_public,
                     created_at: clip.created_at,

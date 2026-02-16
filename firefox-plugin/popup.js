@@ -7,7 +7,11 @@ let filteredSongs = [];
 document.addEventListener('DOMContentLoaded', () => {
     const statusDiv = document.getElementById("status");
     const folderInput = document.getElementById("folder");
-    const formatSelect = document.getElementById("format");
+    function getSelectedFormat() {
+        const el = document.querySelector('input[name="format"]:checked');
+        return el ? el.value : 'mp3';
+    }
+    const formatRadios = document.querySelectorAll('input[name="format"]');
     const publicCheckbox = document.getElementById("publicOnly");
     const maxPagesInput = document.getElementById("maxPages");
     const fetchBtn = document.getElementById("fetchBtn");
@@ -21,6 +25,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterStems = document.getElementById("filterStems");
     const filterPublic = document.getElementById("filterPublic");
     const selectAllCheckbox = document.getElementById("selectAll");
+    const downloadMusicCheckbox = document.getElementById("downloadMusic");
+    const downloadLyricsCheckbox = document.getElementById("downloadLyrics");
+    const downloadImageCheckbox = document.getElementById("downloadImage");
     const songList = document.getElementById("songList");
     const songCount = document.getElementById("songCount");
     const settingsPanel = document.getElementById("settingsPanel");
@@ -46,9 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFromStorage();
     
     // Save format preference when changed
-    formatSelect.addEventListener("change", () => {
-        api.storage.local.set({ sunoFormat: formatSelect.value });
-    });
+    formatRadios.forEach(r => r.addEventListener("change", () => {
+        api.storage.local.set({ sunoFormat: getSelectedFormat() });
+    }));
     
     // Dark mode toggle
     darkModeToggle.addEventListener("click", () => {
@@ -137,7 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Load saved format preference first (outside data check so it always loads)
             if (result.sunoFormat) {
-                formatSelect.value = result.sunoFormat;
+                const radio = document.querySelector(`input[name="format"][value="${result.sunoFormat}"]`);
+                if (radio) radio.checked = true;
             }
             if (data) {
                 allSongs = data.songs || [];
@@ -145,7 +153,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Restore settings
                 if (data.folder) folderInput.value = data.folder;
-                if (data.format) formatSelect.value = data.format;
+                if (data.format) {
+                    const radio = document.querySelector(`input[name="format"][value="${data.format}"]`);
+                    if (radio) radio.checked = true;
+                }
                 if (data.publicOnly !== undefined) publicCheckbox.checked = data.publicOnly;
                 if (data.maxPages !== undefined) maxPagesInput.value = data.maxPages;
                 
@@ -193,12 +204,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 sunoSongsList: {
                     songs: allSongs,
                     folder: folderInput.value,
-                    format: formatSelect.value,
+                    format: getSelectedFormat(),
                     publicOnly: publicCheckbox.checked,
                     maxPages: parseInt(maxPagesInput.value) || 0,
                     timestamp: Date.now()
                 },
-                sunoFormat: formatSelect.value
+                sunoFormat: getSelectedFormat()
             });
         } catch (e) {
             console.error('Failed to save to storage:', e);
@@ -344,9 +355,15 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDiv.innerText = "No songs selected!";
             return;
         }
+
+        const downloadOptions = getDownloadOptions();
+        if (!downloadOptions.music && !downloadOptions.lyrics && !downloadOptions.image) {
+            statusDiv.innerText = "Please select at least one download type: music, lyrics, or image.";
+            return;
+        }
         
         const folder = folderInput.value;
-        const format = formatSelect.value;
+        const format = getSelectedFormat();
         const songsToDownload = allSongs.filter(s => selectedIds.includes(s.id));
 
         setDownloadUiState(true);
@@ -355,10 +372,15 @@ document.addEventListener('DOMContentLoaded', () => {
             action: "download_selected", 
             folderName: folder,
             format: format,
-            songs: songsToDownload
+            songs: songsToDownload,
+            downloadOptions: downloadOptions
         });
         
-        statusDiv.innerText = `Downloading ${songsToDownload.length} songs + lyrics...`;
+        const selectedTypes = [];
+        if (downloadOptions.music) selectedTypes.push(format.toUpperCase());
+        if (downloadOptions.lyrics) selectedTypes.push("lyrics");
+        if (downloadOptions.image) selectedTypes.push("images");
+        statusDiv.innerText = `Downloading ${songsToDownload.length} song(s): ${selectedTypes.join(", ")}...`;
     });
 
     // Stop downloading
@@ -526,6 +548,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function getSelectedSongIds() {
         const checkboxes = songList.querySelectorAll('input[type="checkbox"]:checked');
         return Array.from(checkboxes).map(cb => cb.dataset.id);
+    }
+
+    function getDownloadOptions() {
+        return {
+            music: !!downloadMusicCheckbox?.checked,
+            lyrics: !!downloadLyricsCheckbox?.checked,
+            image: !!downloadImageCheckbox?.checked
+        };
     }
 
     function updateSelectedCount() {
