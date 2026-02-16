@@ -466,7 +466,11 @@ async function downloadSelectedSongs(folderName, songs, format = 'mp3', jobId = 
                         return { error: e?.message || String(e) };
                     }
                 },
-                args: [fileText, (fullFilename.split('/').pop() || fullFilename)]
+                // When the downloads API rejects (e.g. data: URL not allowed), we fall back
+                // to an in-page anchor. Browsers don't accept folder paths on that fallback,
+                // so include the selected folder name in the suggested filename by
+                // replacing path separators with '-'. This keeps files grouped by folder.
+                args: [fileText, fullFilename.replace(/\//g, '-')]
             });
 
             const result = results?.[0]?.result;
