@@ -8,7 +8,7 @@ function bumpVersion(version) {
   const parts = version.split(".");
 
   if (parts.length < 2 || parts.length > 4 || parts.some((p) => !/^\d+$/.test(p))) {
-    throw new Error(`Unsupported version format: ${version}. Expected 2-4 numeric segments like 0.9.2`);
+    throw new Error(`Unsupported version format: ${version}. Expected 2-4 numeric segments like 0.9.4`);
   }
 
   const nums = parts.map((p) => Number.parseInt(p, 10));
